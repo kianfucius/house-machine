@@ -3,14 +3,13 @@ Spotify class, authenticates and holds client. All our spotify helpers live here
 """
 import logging
 import os
-import time
 from typing import List
 
 import pandas as pd
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-from utils import ceildiv
+from scripts.utils import ceildiv
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +20,7 @@ class Spotify:
     Spotify class, authenticates and holds client. All our spotify helpers live here.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, cred_num: int = 0) -> None:
         """
         Initializes the Spotipy library with .env values
 
@@ -33,6 +32,35 @@ class Spotify:
         -------
         None
         """
+        # credNum indicates the current index of the credentials we're using,
+        # since we're using a whole bunch of accounts
+        self.cred_num = cred_num
+        logger.info("Using cred #%s", self.cred_num)
+        self.temp_playlists = os.getenv("TEMP_PLAYLISTS", default="").split(",")
+        self.user_name = os.getenv("USERNAME", default="")
+        # client_id = os.getenv("CLIENT_ID", default="")
+        # client_secret = os.getenv("CLIENT_SECRET", default="")
+        self.client_ids = os.getenv("CLIENT_IDS", default="").split(",")
+        self.client_secrets = os.getenv("CLIENT_SECRETS", default="").split(",")
+        self.authenticate(self.cred_num)
+
+    def authenticate(self, account_index: int = 0):
+        """
+        Authenticates the Spotipy library with .env values
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        if self.cred_num > len(self.client_ids):
+            raise EnvironmentError("You need to specify more credentials in .env.")
+        # remove .cache-house-machine from root
+        # if os.path.exists(f".cache-{self.user_name}"):
+        #     os.remove(f".cache-{self.user_name}")
         scope = [
             "user-library-read",
             "playlist-read-private",
@@ -40,21 +68,25 @@ class Spotify:
             "playlist-modify-private",
             "playlist-modify-public",
         ]
-        self.temp_playlists = os.getenv("TEMP_PLAYLISTS", default="").split(",")
-        client_id = os.getenv("CLIENT_ID", default="")
-        client_secret = os.getenv("CLIENT_SECRET", default="")
         self.client = spotipy.Spotify(
             auth_manager=SpotifyOAuth(
-                username="house-machine",
-                client_id=client_id,
-                client_secret=client_secret,
+                username=self.user_name,
+                client_id=self.client_ids[account_index],
+                client_secret=self.client_secrets[account_index],
                 redirect_uri="http://localhost",
                 scope=" ".join(scope),
-            )
+            ),
+            requests_timeout=5,
+            retries=0,
         )
-        user_info = self.client.current_user()
-        assert user_info
-        logger.info("Logged in as %s", user_info["display_name"])
+        # user_info = self.client.current_user()
+        # assert user_info
+        # logger.info(
+        #     "Logged in as %s w/ key %s",
+        #     user_info["display_name"],
+        #     self.client_ids[account_index],
+        # )
+        self.cred_num += 1
 
     def get_recommendation_playlist_df(self, playlist_ids: List[str]) -> pd.DataFrame:
         """
@@ -95,131 +127,6 @@ class Spotify:
             )
 
         return final_df
-
-    def get_recommendation_artist_df(
-        self, artist_ids: List[str], checkpoint: int = 0
-    ) -> pd.DataFrame:
-        """
-        Hits Spotipy to get a df of our artists' tracks
-
-        Parameters
-        ----------
-        artist_ids : List[string]
-            The ID's for our seed Spotify artists
-        checkpoint : int
-            The checkpoint to start at (last failed artist)
-
-        Returns
-        -------
-        df :
-            Dataframe of all tracks from our artists
-        """
-        artist_count = len(artist_ids)
-        if artist_count == 0:
-            raise EnvironmentError("No artist id's provided")
-        logger.info("Collecting songs from %s artists", artist_count)
-
-        final_df = pd.DataFrame()
-        if checkpoint != 0:
-            logger.info("Starting from checkpoint %s", checkpoint)
-            final_df = pd.read_csv(
-                "checkpoints/data/artist_checkpoint.csv", index_col=0
-            )
-
-        for index in range(checkpoint, len(artist_ids)):
-            logger.info("Collecting songs from artist #%s/%s", index, artist_count)
-            artist_id = artist_ids[index]
-            # Get artist's albums
-            albums = self.client.artist_albums(artist_id)
-            assert albums
-
-            # Make list to hold all track ids for the current artist
-            artist_track_ids = []
-
-            for album in albums["items"]:
-                # Get list of artist tracks
-                track_results = self.client.album_tracks(album["id"])
-                assert track_results
-
-                artist_track_ids.extend(
-                    [track["id"] for track in track_results["items"]]
-                )
-
-            # If for some reason the artist has no tracks, let's move on.
-            # This is super weird, but it DOES happen
-            if len(artist_track_ids) == 0:
-                continue
-
-            # Add to temporary playlist.
-            # We do this because the spotipy.album_tracks does not give us popularity
-            # or album name, and we'll probably want that for filtering later.
-            logger.info("Uploading artist %s to temp playlist", artist_id)
-            self.add_all_songs_to_playlists(self.temp_playlists, artist_track_ids)
-
-            # Get songs from playlist as df
-            # Weird indexing on temp_playlists is to prevent us from over-reading playlists
-            # with nothing in them.
-            artist_df = self.get_recommendation_playlist_df(
-                self.temp_playlists[0 : ceildiv(len(artist_track_ids), 10000)]
-            )
-
-            # Add to total df
-            final_df = (
-                pd.concat([final_df, artist_df])
-                .drop_duplicates("track_id")
-                .reset_index(drop=True)
-            )
-
-            # Checkpoint just in case we get rate limited or something :)
-            final_df.to_csv("tmp/artist_checkpoint.csv")
-
-        final_df.to_csv("tmp/artist_recommendations.csv")
-        return final_df
-
-    def get_recommendation_genre_df(
-        self, genres: List[str], num_tracks: int = 10000
-    ) -> pd.DataFrame:
-        """
-        Hits Spotipy to get a df of our artists' tracks
-
-        Parameters
-        ----------
-        genres : List[string]
-            The Spotify genres from which to get recommendations
-        num_tracks: int
-            The total amount of recommendations to get for the genre
-
-        Returns
-        -------
-        df :
-            Dataframe of all tracks from our genre
-        """
-        valid_genres = self.client.recommendation_genre_seeds()
-        assert valid_genres
-        for genre in genres:
-            if genre not in valid_genres["genres"]:
-                raise EnvironmentError(f"Genre '{genre}' does not exist in Spotify")
-
-        # Define the list of recommended tracks
-        recommended_tracks = []
-
-        # Retrieve recommendations based on the 'trance' genre and a limit of 100 tracks per request
-        while len(recommended_tracks) < num_tracks:
-            remaining_tracks = num_tracks - len(recommended_tracks)
-            logger.info("Collecting genre tracks. Remaining: %s", remaining_tracks)
-            limit = min(remaining_tracks, 100)
-            recommendations = self.client.recommendations(
-                seed_genres=genres, limit=limit, fields="tracks"
-            )
-            assert recommendations
-            recommended_tracks += recommendations["tracks"]
-
-        # Create df of our genre-recommended songs
-        genre_df: pd.DataFrame = self.create_df_from_recommendation_results(
-            recommended_tracks
-        )
-        genre_df.to_csv("tmp/genre_recommendations.csv")
-        return genre_df
 
     def __get_playlist_length(self, playlist_id: str) -> int:
         """
@@ -297,6 +204,9 @@ class Spotify:
         limit : int
             The amount of recommendations to generate per query.
             Spotify's limit is 5 tracks.
+        checkpoint : int
+            The checkpoint from which to start (where we last failed).
+            This will probably be a multiple of 100.
 
         Returns
         -------
@@ -304,26 +214,38 @@ class Spotify:
             DF of objects containing the track objects from Spotipy
         """
         # If we provided a checkpoint we should use it.
-        if checkpoint != 0:
+        if checkpoint > 0:
             logger.info("Starting from checkpoint %s", checkpoint)
             recommendation_df = pd.read_csv(
-                "checkpoints/data/recommendation_checkpoint.csv", index_col=0
+                "checkpoints/recommendation_checkpoint.csv", index_col=0
             )
+        else:
+            checkpoint = 0
+            recommendation_df = pd.DataFrame()
 
-        recommendation_df = pd.DataFrame()
         for i in range(checkpoint, len(seed_tracks), batch_size):
-            # Some website said spotify's rate limit is 180rpm
-            # So let's just pause 1s per rec to be safe :shrug:
-            time.sleep(1)
             logger.info(
                 "Getting recommendations from songs %s to %s", i, i + batch_size
             )
-            # Hit API to get recommendations
-            recommendations = self.client.recommendations(
-                seed_tracks=seed_tracks[i : i + batch_size],
-                limit=limit,
-                fields="tracks",
-            )
+            try:
+                # Hit API to get recommendations
+                recommendations = self.client.recommendations(
+                    seed_tracks=seed_tracks[i : i + batch_size],
+                    limit=limit,
+                    fields="tracks",
+                )
+            except Exception:
+                logger.info(
+                    "Failed to get recommendations, reauthing at index %s",
+                    self.cred_num,
+                )
+                self.authenticate(self.cred_num)
+                # Hit API to get recommendations
+                recommendations = self.client.recommendations(
+                    seed_tracks=seed_tracks[i : i + batch_size],
+                    limit=limit,
+                    fields="tracks",
+                )
             assert recommendations
             # Add to recomendation df
             temp_df = self.create_df_from_recommendation_results(
@@ -425,7 +347,7 @@ class Spotify:
                 song_batch,
                 song_batch + 100,
                 total_tracks,
-                song_batch // 1000,
+                song_batch // 10000,
             )
             self.client.playlist_add_items(
                 playlist_ids[song_batch // 10000], tracks[song_batch : song_batch + 100]
