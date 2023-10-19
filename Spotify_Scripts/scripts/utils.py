@@ -6,6 +6,7 @@ import shutil
 
 from dotenv import load_dotenv
 
+
 def prep_env(dev=False):
     """
     Basic validation of environment
@@ -22,19 +23,33 @@ def prep_env(dev=False):
     load_dotenv()
     if dev:
         return
-    folder = 'tmp'
-    shutil.rmtree(folder, ignore_errors=True)
-    os.mkdir(folder)
+    temp_directory = "tmp"
+    shutil.rmtree(temp_directory, ignore_errors=True)
+    os.mkdir(temp_directory)
+    if not os.path.exists("checkpoints"):
+        os.mkdir("checkpoints")
 
     # Verify .env values exist
-    env_vars = ['USERNAME', 'CLIENT_ID', 'CLIENT_SECRET', # Login stuff
-                'TEMP_PLAYLISTS', 'NEW_PLAYLISTS', # Temp playlist storage and output
-                'SEED_PLAYLISTS', 'SEED_ARTISTS', 'SEED_GENRES', # Seeds
-                'AWS_ID', 'AWS_KEY', 'BUCKET_NAME'] # AWS credentials/locations
+    env_vars = [
+        # Spotify credentials
+        "USERNAME",
+        "CLIENT_IDS",
+        "CLIENT_SECRETS",
+        # Temp playlist storage and output
+        "TEMP_PLAYLISTS",
+        "NEW_PLAYLISTS",
+        # Seeds
+        "SEED_PLAYLISTS",
+        # AWS credentials/locations
+        "AWS_ID",
+        "AWS_KEY",
+        "BUCKET_NAME",
+    ]
     for var in env_vars:
         buffer = os.getenv(var, default="")
         if not buffer:
             raise EnvironmentError(f"You need to specify {var} in .env")
+
 
 def ceildiv(numerator: int, denominator: int) -> int:
     """

@@ -5,17 +5,19 @@ the process of downloading songs from Spotify.
 import asyncio
 from typing import Optional, Union
 
-from hm_downloader import HMDownloader
+from scripts.hm_downloader import HMDownloader
 from spotdl import Spotdl
 from spotdl._version import __version__
 from spotdl.types.options import DownloaderOptionalOptions, DownloaderOptions
 from spotdl.utils.spotify import SpotifyClient
+
 
 class HmSpotDl(Spotdl):
     """
     House-Machine's version of the Spotdl class, which simplifies
     the process of downloading songs from Spotify.
     """
+
     def __init__(
         self,
         client_id: str,
@@ -27,7 +29,8 @@ class HmSpotDl(Spotdl):
         downloader_settings: Optional[
             Union[DownloaderOptionalOptions, DownloaderOptions]
         ] = None,
-        loop: Optional[asyncio.AbstractEventLoop] = None,):
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ):
         # pylint: disable-super-init-not-called
         """
         Initialize the Spotdl class
