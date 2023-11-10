@@ -138,3 +138,7 @@ dmypy.json
 tmp/*
 data/*
 .cache*
+
+# Prod files
+wandb/
+lightning_logs/

@@ -18,4 +18,5 @@ TRAINING_CONFIG = {
     "gradient_clip_val": 1.5,
     "limit_train_batches": 30,
     "profiler": "advanced",
+    "limit_val_batches": 1.0,
 }
