@@ -31,17 +31,18 @@ class LitAudioEncoder(L.LightningModule):
         self.model = model
         self.num_val_samples = num_saved_samples_per_val_step
 
-        config_dict = TRAINING_CONFIG
-        config_dict["Learning_Rate"] = LEARNING_RATE
+        config_dict = TRAINING_CONFIG.copy()
+        config_dict["learning_rate"] = LEARNING_RATE
         config_dict["num_val_sample_steps"] = self.val_sample_steps
 
         # Initialize WandB Logger
+        wandb.login(key=os.getenv("WANDB_API_KEY"))
         wandb.init(
             # set the wandb project where this run will be logged
             project=project_name,
             name=f"{project_name}-run-0",
             # track hyperparameters and run metadata
-            config=TRAINING_CONFIG,
+            config=config_dict,
         )
 
     def training_step(self, batch, batch_idx):
