@@ -1,13 +1,20 @@
-from torch.utils.data import Dataset
 import pandas as pd
 import torchaudio
-import os
+from torch.utils.data import Dataset
+
 
 class AudioChunkDataSet(Dataset):
     """
     Torch Dataset Class which will be used to load the chunked audio into the encoder-decoder model.
     """
-    def __init__(self,meta_data:pd.DataFrame,preprocessed_audio_dir:str, get_audio_sample_path_func:callable, get_metadata: list= None) -> None:
+
+    def __init__(
+        self,
+        meta_data: pd.DataFrame,
+        preprocessed_audio_dir: str,
+        get_audio_sample_path_func: callable,
+        get_metadata: list = None,
+    ) -> None:
         super().__init__()
         self.get_metadata = get_metadata
         if self.get_metadata:
@@ -26,4 +33,3 @@ class AudioChunkDataSet(Dataset):
             return signal, self.only_meta_df.iloc[index].to_dict()
         else:
             return signal
-        
