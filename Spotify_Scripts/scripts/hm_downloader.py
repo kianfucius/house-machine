@@ -1,3 +1,4 @@
+# pylint: disable=missing-module-docstring
 import asyncio
 import datetime
 import json
@@ -6,10 +7,10 @@ import os
 import traceback
 from pathlib import Path
 from typing import List, Optional, Tuple
-from typing_extensions import override
 
 import boto3
 from botocore.exceptions import ClientError
+from pydub import AudioSegment
 from spotdl._version import __version__
 from spotdl.download.downloader import (
     SPONSOR_BLOCK_CATEGORIES,
@@ -26,6 +27,7 @@ from spotdl.utils.metadata import MetadataError, embed_metadata
 from spotdl.utils.search import reinit_song, songs_from_albums
 from syncedlyrics import search as syncedlyrics_search
 from syncedlyrics.utils import is_lrc_valid, save_lrc_file
+from typing_extensions import override
 from yt_dlp.postprocessor.modify_chapters import ModifyChaptersPP
 from yt_dlp.postprocessor.sponsorblock import SponsorBlockPP
 
@@ -102,11 +104,21 @@ class HMDownloader(Downloader):
         -------
         None
         """
-        # self.s3_client.upload_file(file_path, self.bucket_name, youtube_id)
-        self.s3_client.Object(self.bucket_name, file_name).upload_file(file_path)
+        # Convert FLAC to WAV
+        audio = AudioSegment.from_file(file_path, format="flac")
+        wav_data = audio.raw_data
+        wav_file = AudioSegment(
+            wav_data,
+            frame_rate=audio.frame_rate,
+            sample_width=audio.sample_width,
+            channels=audio.channels,
+        )
+        upload_path = f"{file_path}.wav"
+        wav_file.export(upload_path, format="wav")
+        self.s3_client.Object(self.bucket_name, file_name).upload_file(upload_path)
         file_path.unlink()
 
-    # All of the following  code is modified from spotdl
+    # All of the following code is modified from spotdl
     # https://github.com/spotDL/spotify-downloader
     @override
     def download_multiple_songs(
