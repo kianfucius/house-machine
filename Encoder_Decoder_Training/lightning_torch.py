@@ -5,12 +5,10 @@ import lightning as L
 import torch.nn.functional as F
 import torchaudio
 import wandb
-from lightning.pytorch.utilities.types import LRSchedulerTypeUnion
 from torch import randint
-from torch.optim import AdamW
+from torch.optim import AdamW, lr_scheduler
 
 from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
-
 
 class LitAudioEncoder(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""
@@ -22,8 +20,10 @@ class LitAudioEncoder(L.LightningModule):
         val_sample_dir=VAL_DIR,
         num_saved_samples_per_val_step=1,
         num_validation_sample_steps=50,
+        learning_rate_scheduler=None,
     ):
         super().__init__()
+        self.lr_scheduler = learning_rate_scheduler
         self.val_sample_steps = num_validation_sample_steps
         self.val_dir = val_sample_dir
         # Making directory if doesn't exist.
@@ -51,12 +51,28 @@ class LitAudioEncoder(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return AdamW(self.parameters(), lr=LEARNING_RATE)
-
-    def lr_scheduler_step(
-        self, scheduler: LRSchedulerTypeUnion, metric: Any | None
-    ) -> None:
-        return super().lr_scheduler_step(scheduler, metric)
+        optimizer = AdamW(self.parameters(), lr=LEARNING_RATE)
+        if not self.lr_scheduler:
+            self.lr_scheduler = lr_scheduler.ReduceLROnPlateau(
+                optimizer=optimizer, patience=5, cooldown=2, factor=0.5
+            )
+        LR_TRANING_CONFIG = {
+            # REQUIRED: The scheduler instance
+            "scheduler": lr_scheduler,
+            # The unit of the scheduler's step size, could also be 'step'.
+            # 'epoch' updates the scheduler on epoch end whereas 'step'
+            # updates it after a optimizer update.
+            "interval": "epoch",
+            # How many epochs/steps should pass between calls to
+            # `scheduler.step()`. 1 corresponds to updating the learning
+            # rate after every epoch/step.
+            "frequency": TRAINING_CONFIG[
+                "check_val_every_n_epoch"
+            ],  # <- I do this to make sure the validation loss and training is aligned.
+            # Metric to to monitor for schedulers.
+            "monitor": "val_loss",
+        }
+        return {"optimizer": optimizer, "lr_scheduler": LR_TRANING_CONFIG}
 
     def validation_step(self, val_batch, batch_idx):
         wandb_logger = self.logger.experiment
@@ -71,7 +87,7 @@ class LitAudioEncoder(L.LightningModule):
         base_path = os.path.join(self.val_dir + ":", self.current_epoch)
         for i in list(random_index):
             # Making directory if doesn't exist.
-            sample_dir = os.path.join(base_path, "Audio_Example_1")
+            sample_dir = os.path.join(base_path, f"Audio_Example_{i}")
             torchaudio.save(
                 os.path.join(sample_dir, "original.wav"),
                 val_batch[i, :, :],
