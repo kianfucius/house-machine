@@ -11,11 +11,11 @@ TRAINING_CONFIG = {
     "devices": 1,
     "precision": "16-mixed",
     "accumulate_grad_batches": 2,
-    "check_val_every_n_epoch": 2,
-    "max_time": "00:24:00:00",
     "enable_checkpointing": True,
-    #"gradient_clip_val": 1.5,
-    "limit_train_batches": 30,
+    # "gradient_clip_val": 1.5,
     "profiler": "advanced",
-    "limit_val_batches": 1.0,
+    "limit_val_batches": 2,
+    "max_epochs": 30,
 }
+BATCH_SIZE = 16
+MODEL_DIRECTORY = "model"
