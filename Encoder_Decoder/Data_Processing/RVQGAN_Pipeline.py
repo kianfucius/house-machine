@@ -35,7 +35,7 @@ class RVQGANEncoder:
 
 
     @torch.inference_mode()
-    def get_latents(self, x:AudioSignal, resample = False) -> torch.tensor:
+    def get_latents(self, x:AudioSignal) -> torch.tensor:
         """
         Get latent representation of audio_tensor.
         """
