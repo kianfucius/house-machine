@@ -5,12 +5,15 @@ import os
 import numpy as np
 import pandas as pd
 import torch
+from torch.nn import ConstantPad1d 
 import torchaudio
 from tqdm import tqdm
 
 import constants
 
+from audiotools import AudioSignal
 from .Chunk_Dataset import AudioChunkDataSet
+from RVQGAN_Pipeline import RVQGANEncoder
 
 
 class PreProcessor:
@@ -22,14 +25,16 @@ class PreProcessor:
         self,
         input_audio_dir=constants.RAW_MP3_DIR,
         output_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
-        desired_sample_rate=48000,
-        tensor_len=2**18,
+        desired_sample_rate=44100,
+        tensor_len=2**17,
     ) -> None:
         self.meta_data = None
         self.input_dir = input_audio_dir
         self.output_dir = output_dir
         self.sample_rate = desired_sample_rate
         self.tensor_len = tensor_len
+        self.encoder = RVQGANEncoder()
+        self.time_per_chunk = self.encoder.audio_seconds
         self.metadata_dir = os.path.join(self.output_dir, "metadata") + ".csv"
         self.audio_dir = os.path.join(self.output_dir, "waveforms")
         self.training_meta_dir = (
@@ -43,27 +48,20 @@ class PreProcessor:
     def chunk_single_song(self, audio_file):
         """
         Chunking Procedure for a single audio file.
+
+        Note: You will need enough memory to perform the forward pass for the encoder model.
+
+        Be mindful of this when encoding.
         """
-        splitted, sample_rate, start_times, time_per_split = self.split_audio(
+        splitted = self.split_audio(
             os.path.join(self.input_dir, audio_file)
         )
-        song_name = audio_file[:-4]
-        temp_df = pd.DataFrame(start_times, columns=["start_time"])
-        temp_df["sample_rate"] = sample_rate
-        temp_df["time_len"] = time_per_split
-        temp_df["song_name"] = song_name
-        parent_dir = os.path.join(self.audio_dir, song_name)
-        if not os.path.exists(parent_dir):
-            os.makedirs(parent_dir)
-        for i in range(len(splitted)):
-            music_path = os.path.join(parent_dir, str(int(start_times[i]))) + ".wav"
-            torchaudio.save(
-                music_path,
-                splitted[i],
-                sample_rate=self.sample_rate,
-                channels_first=True,
-            )
-        return temp_df
+        return_latent = torch.empty((splitted.shape[0], self.encoder.latent_dim,self.encoder.encoded_len))
+        for i in range(splitted.shape[0]):
+            audio_signal= AudioSignal(splitted[i,:,:],sample_rate= self.sample_rate)
+            return_latent[i,:,:] = self.encoder.get_latents(audio_signal)
+
+        return return_latent
 
     def preprocess(self, verbose=False) -> None:
         """
@@ -81,23 +79,22 @@ class PreProcessor:
         metadata_df.to_csv(os.path.join(self.metadata_dir), index=False)
         self.meta_data = metadata_df
 
-    def split_audio(self, audio_file_path, verbose=False):
+    def split_audio(self, audio_file_path, pad_element = 0):
         """
-        This function splits audio based on desired tensor_len
+        Splits and pads audio based on desired tensor_len
         """
         audio_tensor, sample_rate = torchaudio.load(audio_file_path)
-        if self.sample_rate != sample_rate and verbose:
-            logging.info(
-                "Sample rate not desired in file with path: " + audio_file_path
-            )
         splitted = torch.split(
             audio_tensor, split_size_or_sections=self.tensor_len, dim=1
-        )[:-1]
-        time_per_split = (audio_tensor.shape[1] / sample_rate) / len(splitted)
-        start_times = (
-            torch.arange(start=0, end=len(splitted)) * time_per_split
-        ).tolist()
-        return splitted, sample_rate, start_times, time_per_split
+        )
+        last_splitted = splitted[-1]
+        splitted[-1] = ConstantPad1d((0, self.tensor_len- last_splitted.shape[1]), pad_element)(last_splitted)
+        splitted = torch.concat(splitted)
+        if self.sample_rate != sample_rate: 
+            resampler = torchaudio.transforms.resample(sample_rate,self.sample_rate)
+            splitted = resampler(splitted)
+        return splitted
+        
 
     def naming_convention(self, audio_file, start_time):
         """
@@ -198,3 +195,10 @@ class PreProcessor:
         train_meta_data = pd.read_csv(self.training_meta_dir)
         val_meta_data = pd.read_csv(self.val_meta_dir)
         return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)
+    
+if __name__ == "__main__":
+    preprocessor = PreProcessor()
+    file_path = 'data\\unprocessed_songs'
+    file_path = os.path.join(file_path,'0k4eAIo1zTGlvJJUF1oZSR.wav')
+    return_tensor = preprocessor.split_audio(file_path)
+    print('passed')
