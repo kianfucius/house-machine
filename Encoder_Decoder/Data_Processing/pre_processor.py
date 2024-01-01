@@ -12,8 +12,8 @@ from tqdm import tqdm
 import constants
 
 from audiotools import AudioSignal
+from .RVQGAN_Pipeline import RVQGANEncoder
 from .Chunk_Dataset import AudioChunkDataSet
-from RVQGAN_Pipeline import RVQGANEncoder
 
 
 class PreProcessor:
@@ -33,7 +33,7 @@ class PreProcessor:
         self.output_dir = output_dir
         self.sample_rate = desired_sample_rate
         self.tensor_len = tensor_len
-        self.encoder = RVQGANEncoder()
+        self.encoder = RVQGANEncoder(tensor_len)
         self.time_per_chunk = self.encoder.audio_seconds
         self.metadata_dir = os.path.join(self.output_dir, "metadata") + ".csv"
         self.audio_dir = os.path.join(self.output_dir, "waveforms")
