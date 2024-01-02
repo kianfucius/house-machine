@@ -23,11 +23,15 @@ class PreProcessor:
 
     def __init__(
         self,
+        meta_data_callback:callable = None,
         input_audio_dir=constants.RAW_MP3_DIR,
         output_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
         desired_sample_rate=44100,
         tensor_len=2**17,
     ) -> None:
+        
+        self.meta_data_callback = meta_data_callback
+        
         self.meta_data = None
         self.input_dir = input_audio_dir
         self.output_dir = output_dir
@@ -56,25 +60,42 @@ class PreProcessor:
         splitted = self.split_audio(
             os.path.join(self.input_dir, audio_file)
         )
-        return_latent = torch.empty((splitted.shape[0], self.encoder.latent_dim,self.encoder.encoded_len))
-        for i in range(splitted.shape[0]):
-            audio_signal= AudioSignal(splitted[i,:,:],sample_rate= self.sample_rate)
-            return_latent[i,:,:] = self.encoder.get_latents(audio_signal)
+    
+        # Considering Song name as file name without file extension.
+        Song_Name = audio_file[:-4]
+        # Creating a specific directory for song name.
+        parent_dir = os.path.join(self.audio_dir, Song_Name)
+        if not os.path.exists(parent_dir):
+            os.makedirs(parent_dir)
 
-        return return_latent
+        # Adding Metadata
+        temp_df = pd.DataFrame([self.naming_convention(Song_Name, start_time=i+1, total_chunks=splitted.shape[0]) for i in range(splitted.shape[0])], 
+                               columns= ['Chunk'])
+        temp_df['Song_Name'] = Song_Name
+
+        # If Additional Song-level meta data needs to be added then implement callback.
+        if self.meta_data_callback:
+            temp_df = self.meta_data_callback(audio_file,temp_df)
+    
+        # Accumulating Latent Tensor
+        for i in range(splitted.shape[0]):
+            music_path = self.naming_convention(Song_Name, i+1,splitted.shape[0]) + ".wav"
+            audio_signal= AudioSignal(splitted[i,:,:],sample_rate= self.sample_rate)
+            temp_encoded = self.encoder.get_latents(audio_signal).cpu().detach()
+            torch.save(
+                temp_encoded,
+                music_path,
+            )
+        return temp_df
 
     def preprocess(self, verbose=False) -> None:
         """
         Chunk dataset into output directory.
         """
         audio_files_list = os.listdir(self.input_dir)
-        with mp.Pool(mp.cpu_count() - 2) as p:
-            return_meta_list = list(
-                tqdm(
-                    p.imap(self.chunk_single_song, audio_files_list),
-                    total=len(audio_files_list),
-                )
-            )
+        return_meta_list = []
+        for audio_file in audio_files_list:
+            return_meta_list.append(self.chunk_single_song(audio_file))
         metadata_df = pd.concat(return_meta_list)
         metadata_df.to_csv(os.path.join(self.metadata_dir), index=False)
         self.meta_data = metadata_df
@@ -96,11 +117,11 @@ class PreProcessor:
         return splitted
         
 
-    def naming_convention(self, audio_file, start_time):
+    def naming_convention(self, audio_file, start_time, total_chunks):
         """
         Function that does the naming convention for the splits
         """
-        return os.path.join(audio_file, str(start_time))
+        return os.path.join(audio_file, 'chunk '+str(start_time) +' out of ' + total_chunks)
 
     def update_meta_data(self):
         """
@@ -131,7 +152,7 @@ class PreProcessor:
             return (
                 os.path.join(
                     self.audio_dir,
-                    self.naming_convention(row["song_name"], int(row["start_time"])),
+                    row['Chunk']
                 )
                 + ".wav"
             )
@@ -139,7 +160,7 @@ class PreProcessor:
         if meta_data is None:
             meta_data = self.update_meta_data()
 
-        meta_data_list = ["song_name", "start_time"]
+        meta_data_list = ["Song_Name", "Chunk"]
         if additional_meta_data:
             meta_data_list = meta_data_list + additional_meta_data
             return AudioChunkDataSet(
@@ -159,7 +180,7 @@ class PreProcessor:
         Note: This function splits by songs, not by number of samples. (so the proportions will be approximate).
         """
         self.update_meta_data()
-        songs_array = self.meta_data["song_name"].unique()
+        songs_array = self.meta_data["Song_Name"].unique()
         np.random.shuffle(songs_array)
         songs_list = songs_array.tolist()
         train_songs = songs_list[: int(np.floor(train_prop * len(songs_list)))]
@@ -168,17 +189,17 @@ class PreProcessor:
         # if len(train_songs)== 0 or len(val_songs) == 0:
         #    raise Exception('Validation set or train set empty -- specify a proportion that allows for model validation and training.')
         if len(train_songs) == 1:
-            train_songs = pd.DataFrame([train_songs], columns=["song_name"])
+            train_songs = pd.DataFrame([train_songs], columns=["Song_Name"])
         else:
-            train_songs = pd.DataFrame(train_songs, columns=["song_name"])
+            train_songs = pd.DataFrame(train_songs, columns=["Song_Name"])
 
         if len(val_songs) == 1:
-            val_songs = pd.DataFrame([val_songs], columns=["song_name"])
+            val_songs = pd.DataFrame([val_songs], columns=["Song_Name"])
         else:
-            val_songs = pd.DataFrame(val_songs, columns=["song_name"])
+            val_songs = pd.DataFrame(val_songs, columns=["Song_Name"])
 
-        train_meta_data = pd.merge(self.meta_data, train_songs, on="song_name")
-        val_meta_data = pd.merge(self.meta_data, val_songs, on="song_name")
+        train_meta_data = pd.merge(self.meta_data, train_songs, on="Song_Name")
+        val_meta_data = pd.merge(self.meta_data, val_songs, on="Song_Name")
 
         train_meta_data.to_csv(self.training_meta_dir)
         val_meta_data.to_csv(self.val_meta_dir)
