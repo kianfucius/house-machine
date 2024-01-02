@@ -1,19 +1,17 @@
-import logging
-import multiprocessing as mp
 import os
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.nn import ConstantPad1d 
 import torchaudio
+from audiotools import AudioSignal
+from torch.nn import ConstantPad1d
 from tqdm import tqdm
 
 import constants
 
-from audiotools import AudioSignal
-from .RVQGAN_Pipeline import RVQGANEncoder
 from .Chunk_Dataset import AudioChunkDataSet
+from .RVQGAN_Pipeline import RVQGANEncoder
 
 
 class PreProcessor:
@@ -23,28 +21,27 @@ class PreProcessor:
 
     def __init__(
         self,
-        meta_data_callback:callable = None,
+        meta_data_callback: callable = None,
         input_audio_dir=constants.RAW_MP3_DIR,
         output_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
         desired_sample_rate=44100,
-        tensor_len=2**17,
+        latent_tensor_len=2**17,
     ) -> None:
-        
         self.meta_data_callback = meta_data_callback
-        
+
         self.meta_data = None
         self.input_dir = input_audio_dir
         self.output_dir = output_dir
         self.sample_rate = desired_sample_rate
-        self.tensor_len = tensor_len
-        self.encoder = RVQGANEncoder(tensor_len)
-        self.time_per_chunk = self.encoder.audio_seconds
-        self.metadata_dir = os.path.join(self.output_dir, "metadata") + ".csv"
-        self.audio_dir = os.path.join(self.output_dir, "waveforms")
-        self.training_meta_dir = (
-            os.path.join(self.output_dir, "train_metadata") + ".csv"
+        self.latent_tensor_len = latent_tensor_len
+        self.encoder = RVQGANEncoder()
+        self.input_tensor_len = self.encoder.get_len_for_latent_tensor_len(
+            latent_tensor_len
         )
-        self.val_meta_dir = os.path.join(self.output_dir, "val_metadata") + ".csv"
+        self.metadata_file_path = os.path.join(self.output_dir, "metadata.csv")
+        self.audio_dir = os.path.join(self.output_dir, "waveforms")
+        self.training_meta_dir = os.path.join(self.output_dir, "train_metadata.csv")
+        self.val_meta_dir = os.path.join(self.output_dir, "val_metadata.csv")
         # Making Directories if these don't already exist
         if not os.path.exists(self.audio_dir):
             os.makedirs(self.audio_dir)
@@ -57,30 +54,38 @@ class PreProcessor:
 
         Be mindful of this when encoding.
         """
-        splitted = self.split_audio(
-            os.path.join(self.input_dir, audio_file)
-        )
-    
+        splitted = self.split_audio(os.path.join(self.input_dir, audio_file))
+
         # Considering Song name as file name without file extension.
-        Song_Name = audio_file[:-4]
+        song_name = audio_file[:-4]
         # Creating a specific directory for song name.
-        parent_dir = os.path.join(self.audio_dir, Song_Name)
+        parent_dir = os.path.join(self.audio_dir, song_name)
         if not os.path.exists(parent_dir):
             os.makedirs(parent_dir)
 
         # Adding Metadata
-        temp_df = pd.DataFrame([self.naming_convention(Song_Name, start_time=i+1, total_chunks=splitted.shape[0]) for i in range(splitted.shape[0])], 
-                               columns= ['Chunk'])
-        temp_df['Song_Name'] = Song_Name
+        temp_df = pd.DataFrame(
+            [
+                self.naming_convention(
+                    song_name, start_time=i + 1, total_chunks=splitted.shape[0]
+                )
+                for i in range(splitted.shape[0])
+            ],
+            columns=["Chunk"],
+        )
+        temp_df["Song_Name"] = song_name
 
         # If Additional Song-level meta data needs to be added then implement callback.
         if self.meta_data_callback:
-            temp_df = self.meta_data_callback(audio_file,temp_df)
-    
+            temp_df = self.meta_data_callback(audio_file, temp_df)
+
         # Accumulating Latent Tensor
         for i in range(splitted.shape[0]):
-            music_path = self.naming_convention(Song_Name, i+1,splitted.shape[0]) + ".wav"
-            audio_signal= AudioSignal(splitted[i,:,:],sample_rate= self.sample_rate)
+            music_path = os.path.join(
+                self.audio_dir,
+                (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".pt"),
+            )
+            audio_signal = AudioSignal(splitted[i, :, :], sample_rate=self.sample_rate)
             temp_encoded = self.encoder.get_latents(audio_signal).cpu().detach()
             torch.save(
                 temp_encoded,
@@ -93,42 +98,47 @@ class PreProcessor:
         Chunk dataset into output directory.
         """
         audio_files_list = os.listdir(self.input_dir)
-        return_meta_list = []
-        for audio_file in audio_files_list:
-            return_meta_list.append(self.chunk_single_song(audio_file))
-        metadata_df = pd.concat(return_meta_list)
-        metadata_df.to_csv(os.path.join(self.metadata_dir), index=False)
-        self.meta_data = metadata_df
+        output_df = pd.DataFrame()
+        for index, audio_file in enumerate(tqdm(audio_files_list)):
+            temp_df = self.chunk_single_song(audio_file)
+            output_df = pd.concat([output_df, temp_df])
+            if index % 50 == 0:
+                output_df.to_csv(self.metadata_file_path, index=False)
+        output_df.to_csv(self.metadata_file_path, index=False)
+        self.meta_data = output_df
 
-    def split_audio(self, audio_file_path, pad_element = 0):
+    def split_audio(self, audio_file_path, pad_element=0):
         """
         Splits and pads audio based on desired tensor_len
         """
+
         audio_tensor, sample_rate = torchaudio.load(audio_file_path)
-        splitted = torch.split(
-            audio_tensor, split_size_or_sections=self.tensor_len, dim=1
+        if self.sample_rate != sample_rate:
+            resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+            audio_tensor = resampler(audio_tensor)
+        splitted = list(
+            torch.split(
+                audio_tensor, split_size_or_sections=self.input_tensor_len, dim=1
+            )
         )
         last_splitted = splitted[-1]
-        splitted[-1] = ConstantPad1d((0, self.tensor_len- last_splitted.shape[1]), pad_element)(last_splitted)
-        splitted = torch.concat(splitted)
-        if self.sample_rate != sample_rate: 
-            resampler = torchaudio.transforms.resample(sample_rate,self.sample_rate)
-            splitted = resampler(splitted)
-        return splitted
-        
+        splitted[-1] = ConstantPad1d(
+            (0, self.input_tensor_len - last_splitted.shape[1]), pad_element
+        )(last_splitted)
+        return torch.stack(splitted, dim=0)
 
     def naming_convention(self, audio_file, start_time, total_chunks):
         """
         Function that does the naming convention for the splits
         """
-        return os.path.join(audio_file, 'chunk '+str(start_time) +' out of ' + total_chunks)
+        return os.path.join(audio_file, f"chunk {start_time} out of {total_chunks}")
 
     def update_meta_data(self):
         """
         make a call to the meta data directory and store in class variable.
         """
         try:
-            self.meta_data = pd.read_csv(self.metadata_dir)
+            self.meta_data = pd.read_csv(self.metadata_file_path)
         except:
             raise Exception("No Metadata or incorrectly specified metadata path")
         return self.meta_data
@@ -149,13 +159,7 @@ class PreProcessor:
             Function specifying how to get the index from meta_data attribute.
             """
             row = self.meta_data.iloc[index]
-            return (
-                os.path.join(
-                    self.audio_dir,
-                    row['Chunk']
-                )
-                + ".wav"
-            )
+            return os.path.join(self.audio_dir, row["Chunk"]) + ".wav"
 
         if meta_data is None:
             meta_data = self.update_meta_data()
@@ -216,10 +220,11 @@ class PreProcessor:
         train_meta_data = pd.read_csv(self.training_meta_dir)
         val_meta_data = pd.read_csv(self.val_meta_dir)
         return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)
-    
+
+
 if __name__ == "__main__":
     preprocessor = PreProcessor()
-    file_path = 'data\\unprocessed_songs'
-    file_path = os.path.join(file_path,'0k4eAIo1zTGlvJJUF1oZSR.wav')
+    file_path = "data\\unprocessed_songs"
+    file_path = os.path.join(file_path, "0k4eAIo1zTGlvJJUF1oZSR.wav")
     return_tensor = preprocessor.split_audio(file_path)
-    print('passed')
+    print("passed")
