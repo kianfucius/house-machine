@@ -16,9 +16,7 @@ class AudioChunkDataSet(Dataset):
         prompt_constructor: callable
     ) -> None:
         super().__init__()
-        self.get_metadata = get_metadata
-        if self.get_metadata:
-            self.only_meta_df = meta_data[get_metadata]
+        self.prompt_constructor = prompt_constructor
         self.audio_dir = preprocessed_audio_dir
         self._get_audio_sample_path = get_audio_sample_path_func
         self.meta_data = meta_data
@@ -29,7 +27,4 @@ class AudioChunkDataSet(Dataset):
     def __getitem__(self, index):
         audio_sample_path = self._get_audio_sample_path(index)
         signal = torch.load(audio_sample_path)
-        if self.get_metadata:
-            return signal, self.only_meta_df.iloc[index].to_dict()
-        else:
-            return signal
+        return signal, self.prompt_constructor(self.meta_data.iloc[index])

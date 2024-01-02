@@ -144,7 +144,7 @@ class PreProcessor:
         return self.meta_data
 
     def return_dataset(
-        self, meta_data: pd.DataFrame = None, additional_meta_data: list = None
+        self, meta_data: pd.DataFrame = None
     ):
         """
         Instantiate and return an instance of torch's dataloader class consistent with
@@ -163,20 +163,12 @@ class PreProcessor:
 
         if meta_data is None:
             meta_data = self.update_meta_data()
-
-        meta_data_list = ["Song_Name", "Chunk"]
-        if additional_meta_data:
-            meta_data_list = meta_data_list + additional_meta_data
-            return AudioChunkDataSet(
-                meta_data[meta_data_list],
+        return AudioChunkDataSet(
+                meta_data,
                 self.audio_dir,
                 _get_audio_sample_path_from_meta_data,
-                get_metadata=meta_data_list,
-            )
-        else:
-            return AudioChunkDataSet(
-                meta_data, self.audio_dir, _get_audio_sample_path_from_meta_data
-            )
+                prompt_constructor= None)
+
 
     def split_into_train_val(self, train_prop=0.95, additional_meta_data: list = None):
         """
