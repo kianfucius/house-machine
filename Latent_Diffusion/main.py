@@ -18,7 +18,7 @@ from constants import (
     LEARNING_RATE,
 )
 from Data_Processing import pre_processor
-from lightning_torch import LitAudioEncoder
+from Latent_Diffusion.lightning_diffusion import LitAudioEncoder
 
 
 def check_num_workers(test_dataloader):

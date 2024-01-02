@@ -135,9 +135,9 @@ dmypy.json
 .vscode/
 
 # Temp files
-tmp/
-data/
-.cache
+tmp/*
+data/*
+.cache*
 
 # Prod files
 wandb/

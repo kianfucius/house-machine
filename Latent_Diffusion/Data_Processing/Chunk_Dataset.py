@@ -13,7 +13,7 @@ class AudioChunkDataSet(Dataset):
         meta_data: pd.DataFrame,
         preprocessed_audio_dir: str,
         get_audio_sample_path_func: callable,
-        get_metadata: list = None,
+        prompt_constructor: callable
     ) -> None:
         super().__init__()
         self.get_metadata = get_metadata
