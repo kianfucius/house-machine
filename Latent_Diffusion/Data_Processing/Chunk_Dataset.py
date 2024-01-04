@@ -13,7 +13,7 @@ class AudioChunkDataSet(Dataset):
         meta_data: pd.DataFrame,
         preprocessed_audio_dir: str,
         get_audio_sample_path_func: callable,
-        prompt_constructor: callable
+        prompt_constructor: callable,
     ) -> None:
         super().__init__()
         self.prompt_constructor = prompt_constructor
@@ -27,8 +27,9 @@ class AudioChunkDataSet(Dataset):
     def __getitem__(self, index):
         audio_sample_path = self._get_audio_sample_path(index)
         signal = torch.load(audio_sample_path)
-        return signal, self.meta_data.iloc[index]['prompt']
-    
+        return signal, self.meta_data.iloc[index]["prompt"]
+
+
 def collate_function(batch):
     """
     Collate batch which is iterable of (signal_tensor, text)
@@ -37,4 +38,3 @@ def collate_function(batch):
 
     returns (tensor of size B x signal_dimensions, list of length B)
     """
-

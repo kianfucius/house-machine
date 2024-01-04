@@ -23,7 +23,7 @@ class PreProcessor:
         self,
         meta_data_callback: callable = None,
         input_audio_dir=constants.RAW_MP3_DIR,
-        output_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
+        chunked_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
         desired_sample_rate=44100,
         latent_tensor_len=2**17,
     ) -> None:
@@ -31,20 +31,22 @@ class PreProcessor:
 
         self.meta_data = None
         self.input_dir = input_audio_dir
-        self.output_dir = output_dir
+        self.chunked_dir = chunked_dir
         self.sample_rate = desired_sample_rate
         self.latent_tensor_len = latent_tensor_len
         self.encoder = RVQGANEncoder()
         self.input_tensor_len = self.encoder.get_len_for_latent_tensor_len(
             latent_tensor_len
         )
-        self.metadata_file_path = os.path.join(self.output_dir, "metadata.csv")
-        self.audio_dir = os.path.join(self.output_dir, "waveforms")
-        self.training_meta_dir = os.path.join(self.output_dir, "train_metadata.csv")
-        self.val_meta_dir = os.path.join(self.output_dir, "val_metadata.csv")
+        self.metadata_file_path = os.path.join(self.chunked_dir, "metadata.csv")
+        self.output_dir = os.path.join(self.chunked_dir, "waveforms")
+        self.training_meta_dir = os.path.join(self.chunked_dir, "train_metadata.csv")
+        self.val_meta_dir = os.path.join(self.chunked_dir, "val_metadata.csv")
         # Making Directories if these don't already exist
-        if not os.path.exists(self.audio_dir):
-            os.makedirs(self.audio_dir)
+        if not os.path.exists(self.input_dir) or len(os.listdir(self.input_dir)) == 0:
+            raise EnvironmentError(
+                f"Please download the dataset and place in {self.input_dir} folder"
+            )
 
     def chunk_single_song(self, audio_file):
         """
@@ -59,7 +61,7 @@ class PreProcessor:
         # Considering Song name as file name without file extension.
         song_name = audio_file[:-4]
         # Creating a specific directory for song name.
-        parent_dir = os.path.join(self.audio_dir, song_name)
+        parent_dir = os.path.join(self.output_dir, song_name)
         if not os.path.exists(parent_dir):
             os.makedirs(parent_dir)
 
@@ -82,7 +84,7 @@ class PreProcessor:
         # Accumulating Latent Tensor
         for i in range(splitted.shape[0]):
             music_path = os.path.join(
-                self.audio_dir,
+                self.output_dir,
                 (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".pt"),
             )
             audio_signal = AudioSignal(splitted[i, :, :], sample_rate=self.sample_rate)
@@ -99,12 +101,36 @@ class PreProcessor:
         """
         audio_files_list = os.listdir(self.input_dir)
         output_df = pd.DataFrame()
-        for index, audio_file in enumerate(tqdm(audio_files_list)):
+        for index, audio_file in enumerate(tqdm(audio_files_list[:50])):
             temp_df = self.chunk_single_song(audio_file)
             output_df = pd.concat([output_df, temp_df])
             if index % 50 == 0:
                 output_df.to_csv(self.metadata_file_path, index=False)
         output_df.to_csv(self.metadata_file_path, index=False)
+        song_info_df = pd.read_csv("tmp/all_songs.csv", index_col=0).reset_index(
+            drop=True
+        )
+        # merge output_df['Song Name'] and song_info_df['track_id']
+        output_df = pd.merge(
+            output_df,
+            song_info_df,
+            left_on="Song_Name",
+            right_on="track_id",
+            how="left",
+        )
+        output_df["prompt"] = output_df.apply(
+            lambda x: x["track_name"]
+            + ","
+            + x["album"]
+            + ","
+            + x["artist"]
+            + ","
+            + x["Chunk"].split("/")[-1]
+            + ","
+            + str(x["popularity"]),
+            axis=1,
+        )
+        output_df.to_csv("data/tmp.csv", index=False)
         self.meta_data = output_df
 
     def split_audio(self, audio_file_path, pad_element=0):
@@ -143,14 +169,12 @@ class PreProcessor:
             raise Exception("No Metadata or incorrectly specified metadata path")
         return self.meta_data
 
-    def return_dataset(
-        self, meta_data: pd.DataFrame = None
-    ):
+    def return_dataset(self, meta_data: pd.DataFrame = None):
         """
         Instantiate and return an instance of torch's dataloader class consistent with
         the metadata csv, and the directories provided in the constructor
         """
-        if len(os.listdir(self.audio_dir)) == 0:
+        if len(os.listdir(self.output_dir)) == 0:
             raise Exception("No Chunked Audio Files -- Check audio directories")
 
         # Implementing get_audio_sample from meta_data method
@@ -159,18 +183,18 @@ class PreProcessor:
             Function specifying how to get the index from meta_data attribute.
             """
             row = self.meta_data.iloc[index]
-            return os.path.join(self.audio_dir, row["Chunk"]) + ".wav"
+            return os.path.join(self.output_dir, row["Chunk"]) + ".pt"
 
         if meta_data is None:
             meta_data = self.update_meta_data()
         return AudioChunkDataSet(
-                meta_data,
-                self.audio_dir,
-                _get_audio_sample_path_from_meta_data,
-                prompt_constructor= None)
+            meta_data,
+            self.output_dir,
+            _get_audio_sample_path_from_meta_data,
+            prompt_constructor=None,
+        )
 
-
-    def split_into_train_val(self, train_prop=0.95, additional_meta_data: list = None):
+    def split_into_train_val(self, train_prop=0.95):
         """
         Splitting the metadata file into train and test and returning torch datasets accordingly.
         Note: This function splits by songs, not by number of samples. (so the proportions will be approximate).
@@ -200,9 +224,7 @@ class PreProcessor:
         train_meta_data.to_csv(self.training_meta_dir)
         val_meta_data.to_csv(self.val_meta_dir)
 
-        return self.return_dataset(
-            train_meta_data, additional_meta_data
-        ), self.return_dataset(val_meta_data, additional_meta_data)
+        return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)
 
     def retrieve_train_test_split(self):
         """
@@ -212,11 +234,3 @@ class PreProcessor:
         train_meta_data = pd.read_csv(self.training_meta_dir)
         val_meta_data = pd.read_csv(self.val_meta_dir)
         return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)
-
-
-if __name__ == "__main__":
-    preprocessor = PreProcessor()
-    file_path = "data\\unprocessed_songs"
-    file_path = os.path.join(file_path, "0k4eAIo1zTGlvJJUF1oZSR.wav")
-    return_tensor = preprocessor.split_audio(file_path)
-    print("passed")

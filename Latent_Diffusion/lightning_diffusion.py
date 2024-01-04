@@ -1,15 +1,12 @@
 import os
-from typing import Any
 
 import lightning as L
 import torch.nn.functional as F
 import torchaudio
+from audio_diffusion_pytorch import DiffusionModel, UNetV0, VDiffusion, VSampler
 from torch import randint
 import torch
 from torch.optim import AdamW, lr_scheduler
-
-from audio_diffusion_pytorch import DiffusionModel, UNetV0, VDiffusion, VSampler
-
 
 from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
 
@@ -89,6 +86,7 @@ class LitAudioEncoder(L.LightningModule):
                 channels_first=True,
             )
 
+
 class StableDiffusion(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""
 
@@ -98,11 +96,11 @@ class StableDiffusion(L.LightningModule):
         num_saved_samples_per_val_step=1,
         num_validation_sample_steps=50,
         learning_rate_scheduler=None,
-        attentions:list[int] = [0, 0, 1, 1, 1, 1],
-        cross_attentions:list[int] = [0, 0, 0, 1, 1, 1],
-        conv_channels:list[int] = [128, 256, 512, 512, 1024, 1024], 
-        factors:list[int] = [1, 2, 2, 2, 2,2],
-        items:list[int] = [1, 2, 2, 4, 8, 8]
+        attentions: list[int] = [0, 0, 1, 1, 1, 1],
+        cross_attentions: list[int] = [0, 0, 0, 1, 1, 1],
+        conv_channels: list[int] = [128, 256, 512, 512, 1024, 1024],
+        factors: list[int] = [1, 2, 2, 2, 2, 2],
+        items: list[int] = [1, 2, 2, 4, 8, 8],
     ):
         super().__init__()
         self.lr_scheduler = learning_rate_scheduler
@@ -111,28 +109,28 @@ class StableDiffusion(L.LightningModule):
         # Defining diffusion model.
         self.model = DiffusionModel(
             net_t=UNetV0,
-            diffusion_t=VDiffusion, 
+            diffusion_t=VDiffusion,
             sampler_t=VSampler,
             use_text_conditioning=True,
             in_channels=72,
-            use_embedding_cfg=True, # U-Net: enables classifier free guidance
+            use_embedding_cfg=True,  # U-Net: enables classifier free guidance
             embedding_max_length=64,
-            use_time_conditioning = True,
-            embedding_features=768, # U-Net: text mbedding features (default for T5-base)
-            cross_attentions=cross_attentions, # U-Net: cross-attention enabled/disabled at each layer
+            use_time_conditioning=True,
+            embedding_features=768,  # U-Net: text mbedding features (default for T5-base)
+            cross_attentions=cross_attentions,  # U-Net: cross-attention enabled/disabled at each layer
             channels=conv_channels,
-            attentions=attentions,# U-Net: channels at each layer
+            attentions=attentions,  # U-Net: channels at each layer
             factors=factors,
             items=items,
-            attention_heads=8, # U-Net: number of attention heads per attention block
-            attention_features=64
-            )
-        
+            attention_heads=8,  # U-Net: number of attention heads per attention block
+            attention_features=64,
+        )
+
         self.num_val_samples = num_saved_samples_per_val_step
 
     def training_step(self, batch, batch_idx):
         audio_wave, text_list = batch
-        loss = self.model(audio_wave, text = text_list, embedding_mask_proba=0.1)
+        loss = self.model(audio_wave, text=text_list, embedding_mask_proba=0.1)
         self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
@@ -157,10 +155,11 @@ class StableDiffusion(L.LightningModule):
             "monitor": "val_loss",
         }
         return {"optimizer": optimizer, "lr_scheduler": lr_training_config}
+
     @torch.no_grad()
     def validation_step(self, val_batch, batch_idx):
         audio_wave, text_list = val_batch
-        loss = self.model(audio_wave, text = text_list, embedding_mask_proba=0.1)
+        loss = self.model(audio_wave, text=text_list, embedding_mask_proba=0.1)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         # Generating and saving audio samples in latent space:
         for i in list(random_index):
