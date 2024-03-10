@@ -119,15 +119,15 @@ class PreProcessor:
             how="left",
         )
         output_df["prompt"] = output_df.apply(
-            lambda x: x["track_name"]
-            + ","
-            + x["album"]
-            + ","
-            + x["artist"]
-            + ","
-            + x["Chunk"].split("/")[-1]
-            + ","
-            + str(x["popularity"]),
+            lambda x: ",".join(
+                [
+                    x["track_name"],
+                    x["album"],
+                    x["artist"],
+                    x["Chunk"].split("/")[-1],
+                    str(x["popularity"]),
+                ]
+            ),
             axis=1,
         )
         output_df.to_csv("data/tmp.csv", index=False)
