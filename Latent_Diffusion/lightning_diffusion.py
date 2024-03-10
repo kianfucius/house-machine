@@ -2,6 +2,7 @@ import os
 
 import lightning as L
 import torch.nn.functional as F
+from torch import nn
 import torchaudio
 from audio_diffusion_pytorch import DiffusionModel, UNetV0, VDiffusion, VSampler
 from torch import randint
@@ -21,6 +22,7 @@ class LitAudioEncoder(L.LightningModule):
         num_saved_samples_per_val_step=1,
         num_validation_sample_steps=50,
         learning_rate_scheduler=None,
+        loss_fn = nn.Module
     ):
         super().__init__()
         self.lr_scheduler = learning_rate_scheduler

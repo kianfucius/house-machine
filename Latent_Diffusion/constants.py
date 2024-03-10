@@ -10,7 +10,7 @@ TRAINING_CONFIG = {
     "accelerator": "gpu",
     "devices": 1,
     "precision": "16-mixed",
-    "accumulate_grad_batches": 2,
+    "accumulate_grad_batches": 3,
     "enable_checkpointing": True,
     # "gradient_clip_val": 1.5,
     "profiler": "advanced",

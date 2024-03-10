@@ -59,7 +59,7 @@ def execute_training_pipeline(
         val_set,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=5,
+        num_workers=3,
         persistent_workers=True,
     )
     if not model_path:

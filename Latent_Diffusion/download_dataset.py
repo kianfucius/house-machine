@@ -48,9 +48,9 @@ def main(num_songs: int, directory: str):
         os.makedirs(directory)
 
     # set up s3 client
-    aws_id = os.getenv("AWS_ID", default="")
-    aws_key = os.getenv("AWS_KEY", default="")
-    bucket_name = os.getenv("SOURCE_BUCKET", default="")
+    aws_id = os.getenv("AWS_ID")
+    aws_key = os.getenv("AWS_KEY")
+    bucket_name = os.getenv("SOURCE_BUCKET")
     # Create an S3 resource object using the temporary credentials
     s3_client = boto3.resource(
         "s3",

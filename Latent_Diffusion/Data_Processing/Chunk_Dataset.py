@@ -29,12 +29,3 @@ class AudioChunkDataSet(Dataset):
         signal = torch.load(audio_sample_path)
         return signal, self.meta_data.iloc[index]["prompt"]
 
-
-def collate_function(batch):
-    """
-    Collate batch which is iterable of (signal_tensor, text)
-
-    and returns batch of signal tensors and list of corresponding text.
-
-    returns (tensor of size B x signal_dimensions, list of length B)
-    """
