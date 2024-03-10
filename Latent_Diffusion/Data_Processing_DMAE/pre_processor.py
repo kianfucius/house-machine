@@ -7,6 +7,7 @@ import torchaudio
 from audiotools import AudioSignal
 from torch.nn import ConstantPad1d
 from tqdm import tqdm
+from multiprocessing import Pool
 
 import constants
 
@@ -24,12 +25,14 @@ class PreProcessor:
         input_audio_dir=constants.RAW_MP3_DIR,
         chunked_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
         desired_sample_rate=44100,
-        input_len=2**17,
+        input_len=2**18,
+        checkpoint_size=50,
     ) -> None:
         self.meta_data_callback = meta_data_callback
 
         self.meta_data = None
         self.input_dir = input_audio_dir
+        self.checkpoint_size = checkpoint_size
         self.chunked_dir = chunked_dir
         self.sample_rate = desired_sample_rate
         self.input_tensor_len = input_len
@@ -53,7 +56,9 @@ class PreProcessor:
         """
         splitted = self.split_audio(os.path.join(self.input_dir, audio_file))
 
-        song_name = audio_file[:-4] # Considering Song name as file name without file extension. 
+        song_name = audio_file.removesuffix(
+            ".wav"
+        )  # Considering Song name as file name without file extension.
         # Creating a specific directory for song name.
         parent_dir = os.path.join(self.output_dir, song_name)
         if not os.path.exists(parent_dir):
@@ -75,6 +80,20 @@ class PreProcessor:
         if self.meta_data_callback:
             temp_df = self.meta_data_callback(audio_file, temp_df)
 
+        # Accumulating Latent Tensor
+        for i in range(splitted.shape[0]):
+            music_path = os.path.join(
+                self.output_dir,
+                (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".pt"),
+            )
+            audio_signal = AudioSignal(splitted[i, :, :], sample_rate=self.sample_rate)
+            # TODO: Add encoder
+            audio_encoded = self.encoder.get_latents(audio_signal).cpu().detach()
+            torch.save(
+                audio_encoded,
+                music_path,
+            )
+
         return temp_df
 
     def preprocess(self) -> None:
@@ -83,12 +102,24 @@ class PreProcessor:
         """
         audio_files_list = os.listdir(self.input_dir)
         output_df = pd.DataFrame()
-        # Need to change the top 50 spots soon.
-        for index, audio_file in enumerate(tqdm(audio_files_list[:50])):
-            output_df = pd.concat([output_df, self.chunk_single_song(audio_file)])
-            if index % 50 == 0:
-                output_df.to_csv(self.metadata_file_path, index=False)
-        output_df.to_csv(self.metadata_file_path, index=False)
+
+        # TODO: Audio file list is shortened for dev. Remove later.
+        audio_files_list = audio_files_list[:self.checkpoint_size]
+        
+        with Pool() as pool:
+            for index, result_df in enumerate(
+                tqdm(
+                    pool.imap_unordered(self.chunk_single_song, audio_files_list),
+                    total=len(audio_files_list),
+                )
+            ):
+                output_df = pd.concat([output_df, result_df])
+
+                # Checkpointing
+                if (index + 1) % self.checkpoint_size == 0:
+                    output_df.to_csv(self.metadata_file_path, index=False)
+                    output_df = pd.DataFrame()  # Clear the output DataFrame
+
         self.meta_data = output_df
 
     def split_audio(self, audio_file_path, pad_element=0):
@@ -115,7 +146,7 @@ class PreProcessor:
         """
         Function that does the naming convention for the splits
         """
-        return os.path.join(audio_file, f"chunk {start_time} out of {total_chunks}")
+        return os.path.join(audio_file, f"chunk {start_time} of {total_chunks}")
 
     def update_meta_data(self):
         """
