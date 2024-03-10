@@ -1,64 +1,61 @@
+import torch
+from torch import nn
+from torch import randint
+from torch.optim import AdamW, lr_scheduler
+import torch.nn.functional as F
+
+from auraloss.freq import SumAndDifferenceSTFTLoss
+from typing import List
+
 import os
+from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
 
 import lightning as L
-import torch.nn.functional as F
-from torch import nn
 import torchaudio
 from audio_diffusion_pytorch import DiffusionModel, UNetV0, VDiffusion, VSampler
-from torch import randint
-import torch
-from torch.optim import AdamW, lr_scheduler
 
-from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
-from Latent_Diffusion.DMAE_Diffusion import CustomFrequencyLoss
+
+class CustomFrequencyLoss(nn.Module):
+    """
+    Class for custom pytorch loss with Custom frequency loss penalty term.
+    """
+
+    def __init__(self, alpha,        
+                fft_sizes: List[int] = [2048, 4096, 1024],
+                hop_sizes: List[int] = [120, 240, 50],
+                win_lengths: List[int] = [600, 1200, 240], 
+                *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.frequency_loss = SumAndDifferenceSTFTLoss(fft_sizes=fft_sizes,
+                                                       hop_sizes = hop_sizes,
+                                                       win_lengths=win_lengths)
+        self.alpha =alpha
         
-        
 
-
-class StableDiffusion(L.LightningModule):
+    def forward(self, v_pred, v_true, x_pred, x_true) :
+        return self.frequency_loss(x_true, x_pred)
+    
+class LitAudioEncoder(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""
 
     def __init__(
         self,
+        model,
         val_sample_dir=VAL_DIR,
         num_saved_samples_per_val_step=1,
         num_validation_sample_steps=50,
         learning_rate_scheduler=None,
-        attentions: list[int] = [0, 0, 1, 1, 1, 1],
-        cross_attentions: list[int] = [0, 0, 0, 1, 1, 1],
-        conv_channels: list[int] = [128, 256, 512, 512, 1024, 1024],
-        factors: list[int] = [1, 2, 2, 2, 2, 2],
-        items: list[int] = [1, 2, 2, 4, 8, 8],
+        loss_fn: nn.Module = None
     ):
         super().__init__()
         self.lr_scheduler = learning_rate_scheduler
         self.val_sample_steps = num_validation_sample_steps
         self.val_dir = val_sample_dir
-        # Defining diffusion model.
-        self.model = DiffusionModel(
-            net_t=UNetV0,
-            diffusion_t=VDiffusion,
-            sampler_t=VSampler,
-            use_text_conditioning=True,
-            in_channels=72,
-            use_embedding_cfg=True,  # U-Net: enables classifier free guidance
-            embedding_max_length=64,
-            use_time_conditioning=True,
-            embedding_features=768,  # U-Net: text mbedding features (default for T5-base)
-            cross_attentions=cross_attentions,  # U-Net: cross-attention enabled/disabled at each layer
-            channels=conv_channels,
-            attentions=attentions,  # U-Net: channels at each layer
-            factors=factors,
-            items=items,
-            attention_heads=8,  # U-Net: number of attention heads per attention block
-            attention_features=64,
-        )
-
+        self.model = model
         self.num_val_samples = num_saved_samples_per_val_step
 
     def training_step(self, batch, batch_idx):
-        audio_wave, text_list = batch
-        loss = self.model(audio_wave, text=text_list, embedding_mask_proba=0.1)
+        loss = self.model(batch)
         self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
@@ -84,12 +81,18 @@ class StableDiffusion(L.LightningModule):
         }
         return {"optimizer": optimizer, "lr_scheduler": lr_training_config}
 
-    @torch.no_grad()
     def validation_step(self, val_batch, batch_idx):
-        audio_wave, text_list = val_batch
-        loss = self.model(audio_wave, text=text_list, embedding_mask_proba=0.1)
+        encoded = self.model.encode(val_batch)
+        decoded = self.model.decode(encoded, num_steps=self.val_sample_steps)
+        loss = F.mse_loss(val_batch, decoded)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        # Generating and saving audio samples in latent space:
+
+        # Generating and saving audio samples.
+        random_index = randint(0, val_batch.shape[0], (self.num_val_samples,))
+        print("Saving Compressed-Decompressed Examples into directory: " + self.val_dir)
+        base_path = os.path.join(f"{self.val_dir}", f"epoch_{self.current_epoch}")
+        val_batch = val_batch.to("cpu")
+        decoded = decoded.to("cpu")
         for i in list(random_index):
             # Making directory if doesn't exist.
             sample_dir = os.path.join(base_path, f"Audio_Example_{i}")
@@ -107,11 +110,3 @@ class StableDiffusion(L.LightningModule):
                 sample_rate=48000,
                 channels_first=True,
             )
-
-
-def make_dir(dir_name):
-    try:
-        os.makedirs(dir_name)
-    except OSError:
-        if not os.path.isdir(dir_name):
-            raise
