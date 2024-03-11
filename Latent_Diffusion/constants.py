@@ -1,7 +1,7 @@
 """Various constants used throughout the project."""
 import os
 
-RAW_MP3_DIR = os.path.join("data", "unprocessed_songs")
+RAW_MP3_DIR = os.path.join("..",'..', "data")
 ENCODER_DECODER_PROCESSED_DIR = os.path.join("data", "chunked_songs")
 VAL_DIR = os.path.join("data", "val_samples")
 WANDB_ENCODER_DECODER_PROJECT_NAME = "lofi-encoder"

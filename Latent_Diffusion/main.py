@@ -46,7 +46,7 @@ def execute_training_pipeline(
     # Pipeline
     preprocessor = pre_processor.PreProcessor()
     if pre_process_data:
-        preprocessor.preprocess(verbose=True)
+        preprocessor.preprocess()
     train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
     train_dataloader = DataLoader(
         train_set,

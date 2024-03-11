@@ -10,10 +10,6 @@ import torch
 from torch.optim import AdamW, lr_scheduler
 
 from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
-from Latent_Diffusion.DMAE_Diffusion import CustomFrequencyLoss
-        
-        
-
 
 class StableDiffusion(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""

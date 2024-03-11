@@ -9,8 +9,6 @@ from torch.nn import ConstantPad1d
 from tqdm import tqdm
 from multiprocessing import Pool
 
-import constants
-
 from .Chunk_Dataset import AudioChunkDataSet
 
 
@@ -22,8 +20,8 @@ class PreProcessor:
     def __init__(
         self,
         meta_data_callback: callable = None,
-        input_audio_dir=constants.RAW_MP3_DIR,
-        chunked_dir=constants.ENCODER_DECODER_PROCESSED_DIR,
+        input_audio_dir="data",
+        chunked_dir="chunked_data",
         desired_sample_rate=44100,
         input_len=2**18,
         checkpoint_size=50,
@@ -87,10 +85,8 @@ class PreProcessor:
                 (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".pt"),
             )
             audio_signal = AudioSignal(splitted[i, :, :], sample_rate=self.sample_rate)
-            # TODO: Add encoder
-            audio_encoded = self.encoder.get_latents(audio_signal).cpu().detach()
             torch.save(
-                audio_encoded,
+                audio_signal,
                 music_path,
             )
 
@@ -102,9 +98,8 @@ class PreProcessor:
         """
         audio_files_list = os.listdir(self.input_dir)
         output_df = pd.DataFrame()
-
-        # TODO: Audio file list is shortened for dev. Remove later.
-        audio_files_list = audio_files_list[:self.checkpoint_size]
+        
+        audio_files_list = audio_files_list
         
         with Pool() as pool:
             for index, result_df in enumerate(
