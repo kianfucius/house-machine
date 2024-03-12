@@ -82,13 +82,21 @@ class PreProcessor:
         for i in range(splitted.shape[0]):
             music_path = os.path.join(
                 self.output_dir,
-                (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".pt"),
+                (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".wav"),
             )
-            audio_signal = AudioSignal(splitted[i, :, :], sample_rate=self.sample_rate)
-            torch.save(
-                audio_signal,
+            torchaudio.save(
                 music_path,
+                src = splitted[i, :, :].squeeze(),
+                format = 'wav',
+                sample_rate = self.sample_rate
             )
+        # Removing from initial directoy:
+        remove_path = os.path.join(self.input_dir, song_name) + '.wav'
+        if os.path.isfile(remove_path):
+            os.remove(remove_path)
+        else:
+            # If it fails, inform the user.
+            print("Error: %s file not found" % song_name)
 
         return temp_df
 
@@ -101,19 +109,17 @@ class PreProcessor:
 
         audio_files_list = audio_files_list
         
-        with Pool(4) as pool:
-            for index, result_df in enumerate(
-                tqdm(
-                    pool.imap_unordered(self.chunk_single_song, audio_files_list),
-                    total=len(audio_files_list),
-                )
-            ):
-                output_df = pd.concat([output_df, result_df])
+        # with Pool(4) as pool:
+        #     for index, result_df in enumerate(
+        #         tqdm(
+        #             pool.imap_unordered(self.chunk_single_song, audio_files_list),
+        #             total=len(audio_files_list),
+        #         )
+        #     ):
+        #         output_df = pd.concat([output_df, result_df])
 
-                # Checkpointing
-                if (index + 1) % self.checkpoint_size == 0:
-                    output_df.to_csv(self.metadata_file_path, index=False)
-                    output_df = pd.DataFrame()  # Clear the output DataFrame
+        for index, audio_file in enumerate(tqdm(audio_files_list)):
+            output_df = pd.concat([output_df, self.chunk_single_song(audio_file)])
 
         self.meta_data = output_df
 
@@ -167,7 +173,7 @@ class PreProcessor:
             Function specifying how to get the index from meta_data attribute.
             """
             row = self.meta_data.iloc[index]
-            return os.path.join(self.output_dir, row["Chunk"]) + ".pt"
+            return os.path.join(self.output_dir, row["Chunk"]) + ".wav"
 
         if meta_data is None:
             meta_data = self.update_meta_data()

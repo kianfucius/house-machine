@@ -1,5 +1,5 @@
 import pandas as pd
-import torch
+import torchaudio
 from torch.utils.data import Dataset
 
 
@@ -26,6 +26,6 @@ class AudioChunkDataSet(Dataset):
 
     def __getitem__(self, index):
         audio_sample_path = self._get_audio_sample_path(index)
-        signal = torch.load(audio_sample_path)
+        signal = torchaudio.load(audio_sample_path)
         return signal
 
