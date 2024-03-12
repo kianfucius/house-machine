@@ -16,10 +16,9 @@ from constants import (
     MODEL_DIRECTORY,
     TRAINING_CONFIG,
     WANDB_ENCODER_DECODER_PROJECT_NAME,
-    RAW_MP3_DIR,
 )
-from Data_Processing import pre_processor
-from lightning_diffusion import LitAudioEncoder
+from Data_Processing_DMAE import pre_processor
+from lightning_DMAE_Diffusion import LitDiffusionAudioEncoder
 
 
 def check_num_workers(test_dataloader):
@@ -34,7 +33,6 @@ def check_num_workers(test_dataloader):
 
 
 def execute_training_pipeline(
-    pre_process_data=False,
     train_split_prop=0.99,
     save_top_k_models=3,
     save_on_n_epochs=5,
@@ -45,8 +43,6 @@ def execute_training_pipeline(
     """
     # Pipeline
     preprocessor = pre_processor.PreProcessor()
-    if pre_process_data:
-        preprocessor.preprocess()
     train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
     train_dataloader = DataLoader(
         train_set,
@@ -62,12 +58,8 @@ def execute_training_pipeline(
         num_workers=3,
         persistent_workers=True,
     )
-    if not model_path:
-        autoencoder = ArchiSound.from_pretrained(
-            "dmae1d-ATC32-v3",
-        )
-    else:
-        autoencoder = load(model_path)
+    
+    lightning_model = LitDiffusionAudioEncoder(loss_fn='custom', alpha= 0.5)
 
     config_dict = TRAINING_CONFIG.copy()
     config_dict["Learning_Rate"] = LEARNING_RATE
@@ -80,7 +72,6 @@ def execute_training_pipeline(
         # track hyperparameters and run metadata
         config=config_dict,
     )
-    lightning_model = LitAudioEncoder(model=autoencoder)
     config_dict["num_val_sample_steps"] = lightning_model.val_sample_steps
 
     if not os.path.exists(MODEL_DIRECTORY):

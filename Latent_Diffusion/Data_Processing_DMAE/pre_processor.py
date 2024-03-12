@@ -98,10 +98,10 @@ class PreProcessor:
         """
         audio_files_list = os.listdir(self.input_dir)
         output_df = pd.DataFrame()
-        
+
         audio_files_list = audio_files_list
         
-        with Pool() as pool:
+        with Pool(4) as pool:
             for index, result_df in enumerate(
                 tqdm(
                     pool.imap_unordered(self.chunk_single_song, audio_files_list),
