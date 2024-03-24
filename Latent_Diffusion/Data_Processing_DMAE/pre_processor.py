@@ -20,8 +20,8 @@ class PreProcessor:
     def __init__(
         self,
         meta_data_callback: callable = None,
-        input_audio_dir="data",
-        chunked_dir="chunked_data",
+        input_audio_dir="Latent_Diffusion/data",
+        chunked_dir="Latent_Diffusion/chunked_data",
         desired_sample_rate=44100,
         input_len=2**18,
         checkpoint_size=50,
@@ -38,11 +38,6 @@ class PreProcessor:
         self.output_dir = os.path.join(self.chunked_dir, "waveforms")
         self.training_meta_dir = os.path.join(self.chunked_dir, "train_metadata.csv")
         self.val_meta_dir = os.path.join(self.chunked_dir, "val_metadata.csv")
-        # Making Directories if these don't already exist
-        if not os.path.exists(self.input_dir) or len(os.listdir(self.input_dir)) == 0:
-            raise EnvironmentError(
-                f"Please download the dataset and place in {self.input_dir} folder"
-            )
 
     def chunk_single_song(self, audio_file):
         """
@@ -82,14 +77,15 @@ class PreProcessor:
         for i in range(splitted.shape[0]):
             music_path = os.path.join(
                 self.output_dir,
-                (self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".wav"),
+                self.naming_convention(song_name, i + 1, splitted.shape[0]) + ".wav",
             )
             torchaudio.save(
                 music_path,
                 src = splitted[i, :, :].squeeze(),
                 format = 'wav',
-                sample_rate = self.sample_rate
-            )
+                sample_rate = self.sample_rate)
+                
+
         # Removing from initial directoy:
         remove_path = os.path.join(self.input_dir, song_name) + '.wav'
         if os.path.isfile(remove_path):
@@ -104,6 +100,12 @@ class PreProcessor:
         """
         Chunk dataset into output directory.
         """
+        # Making Directories if these don't already exist
+        if not os.path.exists(self.input_dir) or len(os.listdir(self.input_dir)) == 0:
+            raise EnvironmentError(
+                f"Please download the dataset and place in {self.input_dir} folder"
+            )
+        
         audio_files_list = os.listdir(self.input_dir)
         output_df = pd.DataFrame()
 
@@ -118,16 +120,24 @@ class PreProcessor:
         #     ):
         #         output_df = pd.concat([output_df, result_df])
 
-        for index, audio_file in enumerate(tqdm(audio_files_list)):
-            output_df = pd.concat([output_df, self.chunk_single_song(audio_file)])
+        for audio_file in tqdm(audio_files_list):
+            try:
+                temp_df = self.chunk_single_song(audio_file)
+            except Exception as e:
+                print('Caught exception:' + str(e))
+                continue
+            
+            output_df = pd.concat([output_df, temp_df])
 
         self.meta_data = output_df
+        print('--- Saving Meta Data DataFrame ---')
+        output_df.to_csv(self.metadata_file_path, index=False)
+        print('Number of successfully chunked songs --' + str(len(os.listdir(self.output_dir)) -1 ))
 
     def split_audio(self, audio_file_path, pad_element=0):
         """
         Splits and pads audio based on desired tensor_len
         """
-
         audio_tensor, sample_rate = torchaudio.load(audio_file_path)
         if self.sample_rate != sample_rate:
             resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
@@ -183,6 +193,39 @@ class PreProcessor:
             _get_audio_sample_path_from_meta_data,
             prompt_constructor=None,
         )
+    
+    def construct_meta_data_file(self):
+        """
+        Based on the output directory provided in the constructor, 
+        creates a new metadata.csv, updates the class variable and returns the file.
+        """
+        return_df = pd.DataFrame()
+        
+        filenames = os.listdir(self.output_dir)
+        for file in filenames:
+            num_chunks = len(os.listdir(os.path.join(self.output_dir)))    
+            # Adding Metadata
+            temp_df = pd.DataFrame(
+                [
+                    self.naming_convention(
+                        file, start_time=i + 1, total_chunks=num_chunks
+                    )
+                    for i in range(num_chunks)
+                ],
+                columns=["Chunk"],
+            )
+            temp_df["Song_Name"] = file
+            return_df = pd.concat([return_df, temp_df])
+        self.meta_data = return_df
+        return return_df
+            
+    def construct_train_split_data_files(self, train_prop = 0.95):
+        """
+        Construct meta data file then randomly splits metadata into
+        train and test Audio Chunk dataset classes.
+        """
+        meta_data_frame = self.construct_meta_data_file()
+        return self.split_into_train_val(train_prop= train_prop)
 
     def split_into_train_val(self, train_prop=0.95):
         """
