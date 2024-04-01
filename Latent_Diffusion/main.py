@@ -7,8 +7,8 @@ import wandb
 from archisound import ArchiSound
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from torch import load
 from torch.utils.data import DataLoader
+from torch import set_float32_matmul_precision
 
 from constants import (
     BATCH_SIZE,
@@ -41,6 +41,9 @@ def execute_training_pipeline(
     """
     Function for executing entire training pipeline
     """
+    # Lowering precision to reduce memory requirements:
+    set_float32_matmul_precision('high')
+
     # Pipeline
     preprocessor = pre_processor.PreProcessor()
 

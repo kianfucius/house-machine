@@ -100,7 +100,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self.model(batch)
-        self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log("train_loss", loss.item(), prog_bar=True, on_step=True, on_epoch=False)
         return loss
 
     def configure_optimizers(self):

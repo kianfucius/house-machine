@@ -17,5 +17,5 @@ TRAINING_CONFIG = {
     "limit_val_batches": 2,
     "max_epochs": 30,
 }
-BATCH_SIZE = 8
+BATCH_SIZE = 10
 MODEL_DIRECTORY = "model"
