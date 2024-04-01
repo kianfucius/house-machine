@@ -43,24 +43,14 @@ class CustomDiffusionModel(VDiffusion):
         v_pred = self.net(x_noisy, sigmas, **kwargs)
 
         # Computing x_pred:
-        x_pred = alphas*x_noisy - sigmas*v_pred
-        # Feeding everything into loss functions:
-
-        if self.tuple_loss:
-            return self.custom_loss(v_pred, 
-                    v_target, 
-                    x_pred,
-                    x,
-                    alphas,
-                    sigmas,
-                    tuple_loss = True)
-        else:
-            return self.custom_loss(v_pred, 
-                    v_target, 
-                    x_pred,
-                    x,
-                    alphas,
-                    sigmas)
+        x_pred = alphas*x_noisy - sigmas_batch*v_pred
+        return self.custom_loss(v_pred, 
+                v_target, 
+                x_pred,
+                x,
+                alphas,
+                sigmas,
+                tuple_loss = self.tuple_loss)
 
 
 class CustomFrequencyLoss(nn.Module):
@@ -101,12 +91,13 @@ class LitDiffusionAudioEncoder(L.LightningModule):
 
     def __init__(
         self,
-        model_path,
+        model_path = None,
         val_sample_dir=VAL_DIR,
         num_saved_samples_per_val_step=3,
         num_validation_sample_steps=50,
         learning_rate_scheduler=None,
         loss_fn = 'custom',
+        quantize_model = True,
         alpha = 0.5
     ):
         """
@@ -116,6 +107,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
 
         alpha only used if loss function is custom.
         alpha is the frequency loss term weight.
+        if quantize_model is true, then
         """
         super().__init__()
         self.lr_scheduler = learning_rate_scheduler
@@ -132,10 +124,14 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             self.model = torch.load(model_path)
         
         if loss_fn =='custom':
-            # Changing forward pass of diffusion model to compute
-            # Custom Loss function.
+            # Changing forward pass of diffusion model to incorporate custom loss function.
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             custom_loss = CustomFrequencyLoss(alpha= alpha)
-            self.model.diffusion = CustomDiffusionModel(self.model.diffusion, custom_loss)
+            self.model.model.diffusion = CustomDiffusionModel(self.model.model.diffusion, custom_loss).to(device)
+        
+        if quantize_model:
+            self.model = torch.quantization.quantize_dynamic(self.model)
+
 
     def training_step(self, batch, batch_idx):
         loss = self.model(batch)
@@ -166,13 +162,17 @@ class LitDiffusionAudioEncoder(L.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         with torch.no_grad():
-            print('Computing Batched generation')
-            model_output = self.model.encode(val_batch)
-            model_output = self.model.decode(model_output, num_steps=self.val_sample_steps)
-            print('Computing Validation Loss')
-            self.model.diffusion.tuple_loss = True
-            diffusion_loss, frequency_loss = self.model(val_batch)
-
+                # -------------------------------------------------------------
+                print('Computing Batched generation')
+                model_output = self.model.encode(val_batch)
+                #with torch.autocast(device_type="cuda"):
+                #model_output = model_output.to(dtype = torch.float)
+                model_output = self.model.decode(model_output, num_steps=self.val_sample_steps,)
+                # -------------------------------------------------------------
+                print('Computing Validation Loss')
+                self.model.model.diffusion.tuple_loss = True
+                diffusion_loss, frequency_loss = self.model(val_batch)
+        # ---------------------------------------------------------------------
         self.log("val_loss", diffusion_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("validation frequency loss", frequency_loss, on_step=False, on_epoch=True, prog_bar=True)
 

@@ -202,8 +202,8 @@ class PreProcessor:
         return_df = pd.DataFrame()
         
         filenames = os.listdir(self.output_dir)
-        for file in filenames:
-            num_chunks = len(os.listdir(os.path.join(self.output_dir)))    
+        for file in tqdm(filenames,desc='Constructing MetaData Dataframe'):
+            num_chunks = len(os.listdir(os.path.join(self.output_dir,file)))    
             # Adding Metadata
             temp_df = pd.DataFrame(
                 [
@@ -217,14 +217,14 @@ class PreProcessor:
             temp_df["Song_Name"] = file
             return_df = pd.concat([return_df, temp_df])
         self.meta_data = return_df
-        return return_df
+        self.meta_data.to_csv(self.metadata_file_path)
             
     def construct_train_split_data_files(self, train_prop = 0.95):
         """
         Construct meta data file then randomly splits metadata into
         train and test Audio Chunk dataset classes.
         """
-        meta_data_frame = self.construct_meta_data_file()
+        self.construct_meta_data_file()
         return self.split_into_train_val(train_prop= train_prop)
 
     def split_into_train_val(self, train_prop=0.95):

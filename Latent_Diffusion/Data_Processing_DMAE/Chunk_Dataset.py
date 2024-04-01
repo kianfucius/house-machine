@@ -26,6 +26,6 @@ class AudioChunkDataSet(Dataset):
 
     def __getitem__(self, index):
         audio_sample_path = self._get_audio_sample_path(index)
-        signal = torchaudio.load(audio_sample_path)
+        signal,sample_rate = torchaudio.load(audio_sample_path)
         return signal
 

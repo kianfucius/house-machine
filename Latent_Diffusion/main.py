@@ -43,7 +43,9 @@ def execute_training_pipeline(
     """
     # Pipeline
     preprocessor = pre_processor.PreProcessor()
-    train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
+
+    train_set, val_set = preprocessor.construct_train_split_data_files(train_prop=train_split_prop)
+    #train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
     train_dataloader = DataLoader(
         train_set,
         batch_size=BATCH_SIZE,
@@ -102,4 +104,4 @@ def execute_training_pipeline(
 
 
 if __name__ == "__main__":
-    execute_training_pipeline(pre_process_data=True)
+    execute_training_pipeline()
