@@ -13,8 +13,7 @@ import lightning as L
 import torchaudio
 from audio_diffusion_pytorch import VDiffusion
 from archisound import ArchiSound
-from auraloss.freq import SumAndDifferenceSTFTLoss
-
+from Custom_Losses import CustomFrequencyLoss
 
 class CustomDiffusionModel(VDiffusion):
     def __init__(self, base_diffusion:VDiffusion, custom_loss:nn.Module):
@@ -49,42 +48,8 @@ class CustomDiffusionModel(VDiffusion):
                 x_pred,
                 x,
                 alphas,
-                sigmas,
+                sigmas_batch,
                 tuple_loss = self.tuple_loss)
-
-
-class CustomFrequencyLoss(nn.Module):
-    """
-    Class for custom pytorch loss with Custom frequency loss penalty term.
-    """
-
-    def __init__(self, alpha = 0.5,        
-                fft_sizes: List[int] = [2048, 4096, 1024],
-                hop_sizes: List[int] = [120, 240, 50],
-                win_lengths: List[int] = [600, 1200, 240], 
-                *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.frequency_loss = SumAndDifferenceSTFTLoss(fft_sizes=fft_sizes,
-                                                       hop_sizes = hop_sizes,
-                                                       win_lengths=win_lengths)
-        self.weighting =alpha
-        
-
-    def forward(self, 
-                v_pred:torch.Tensor, 
-                v_true:torch.Tensor, 
-                x_pred:torch.Tensor, 
-                x_true:torch.Tensor,
-                alphas:torch.Tensor,
-                sigmas:torch.Tensor,
-                tuple_loss= False):
-        
-        mean_loss = F.mse_loss(v_pred,v_true) 
-        frequency_loss = self.frequency_loss(x_true, x_pred)
-        if tuple_loss:
-            return mean_loss, frequency_loss*(1+ (alphas/sigmas)**2)
-        else:
-            return mean_loss + frequency_loss*(1+ (alphas/sigmas)**2)*self.weighting
     
 class LitDiffusionAudioEncoder(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""
@@ -98,7 +63,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
         learning_rate_scheduler=None,
         loss_fn = 'custom',
         quantize_model = True,
-        alpha = 0.5
+        frequency_weight = 0.001
     ):
         """
         if loss_fn == mean: keep v-objective diffusion loss.
@@ -114,7 +79,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
         self.val_sample_steps = num_validation_sample_steps
         self.val_dir = val_sample_dir
         self.num_val_samples = num_saved_samples_per_val_step
-        self.alpha = alpha
+        self.frequency_weight = frequency_weight
 
         if not model_path:
             self.model = ArchiSound.from_pretrained(
@@ -126,7 +91,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
         if loss_fn =='custom':
             # Changing forward pass of diffusion model to incorporate custom loss function.
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            custom_loss = CustomFrequencyLoss(alpha= alpha)
+            custom_loss = CustomFrequencyLoss(frequency_weight= frequency_weight)
             self.model.model.diffusion = CustomDiffusionModel(self.model.model.diffusion, custom_loss).to(device)
         
         if quantize_model:
@@ -190,12 +155,12 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             torchaudio.save(
                 os.path.join(sample_dir, "original.wav"),
                 val_batch[i, :, :],
-                sample_rate=48000,
+                sample_rate=44100,
                 channels_first=True,
             )
             torchaudio.save(
                 os.path.join(sample_dir, "reconstructed.wav"),
                 model_output[i, :, :],
-                sample_rate=48000,
+                sample_rate=44100,
                 channels_first=True,
             )
