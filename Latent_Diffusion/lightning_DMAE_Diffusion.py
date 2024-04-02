@@ -115,7 +115,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             # The unit of the scheduler's step size, could also be 'step'.
             # 'epoch' updates the scheduler on epoch end whereas 'step'
             # updates it after a optimizer update.
-            "interval": "epoch",
+            "interval": "step",
             # How many epochs/steps should pass between calls to
             # `scheduler.step()`. 1 corresponds to updating the learning
             # rate after every epoch/step.
@@ -135,6 +135,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
                 model_output = self.model.decode(model_output, num_steps=self.val_sample_steps,)
                 # -------------------------------------------------------------
                 print('Computing Validation Loss')
+                # Enabling Tuple loss to examine both frequency and MSE loss.
                 self.model.model.diffusion.tuple_loss = True
                 diffusion_loss, frequency_loss = self.model(val_batch)
         # ---------------------------------------------------------------------
@@ -164,3 +165,5 @@ class LitDiffusionAudioEncoder(L.LightningModule):
                 sample_rate=44100,
                 channels_first=True,
             )
+        # Disabling Tuple loss to only get final loss score.
+        self.model.model.diffusion.tuple_loss = False

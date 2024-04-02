@@ -64,7 +64,7 @@ def execute_training_pipeline(
         persistent_workers=True,
     )
     
-    lightning_model = LitDiffusionAudioEncoder(loss_fn='custom', frequency_weight= 0.001)
+    lightning_model = LitDiffusionAudioEncoder(loss_fn='custom', frequency_weight= 0.0005)
 
     config_dict = TRAINING_CONFIG.copy()
     config_dict["Learning_Rate"] = LEARNING_RATE

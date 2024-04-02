@@ -15,7 +15,9 @@ TRAINING_CONFIG = {
     # "gradient_clip_val": 1.5,
     "profiler": "advanced",
     "limit_val_batches": 2,
-    "max_epochs": 30,
+    "max_epochs": 20,
+    'log_every_n_steps':10,
+
 }
-BATCH_SIZE = 10
+BATCH_SIZE = 8
 MODEL_DIRECTORY = "model"

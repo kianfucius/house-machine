@@ -10,14 +10,16 @@ class CustomFrequencyLoss(nn.Module):
     """
 
     def __init__(self, frequency_weight = 0.001,        
-                fft_sizes: List[int] = [2048, 4096, 1024],
-                hop_sizes: List[int] = [120, 240, 50],
-                win_lengths: List[int] = [600, 1200, 240], 
-                *args, **kwargs) -> None:
+                fft_sizes: List[int] = [64, 128, 256,512,1024],
+                hop_sizes:List[int]=[8, 16, 32, 64, 128],
+                win_lengths:List[int]=[32, 64, 128, 256, 512],
+                n_bins:List[int] =[5, 10, 20, 40, 80, 160],
+                            *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.frequency_loss = CustomSumAndDifferenceSTFTLoss(fft_sizes=fft_sizes,
                                                        hop_sizes = hop_sizes,
                                                        win_lengths=win_lengths,
+                                                       n_bins = n_bins,
                                                        reduction = 'none')
         self.weighting =frequency_weight
         
@@ -66,17 +68,17 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
 
     def __init__(
         self,
-        fft_sizes: List[int] = [1024, 2048, 512],
-        hop_sizes: List[int] = [120, 240, 50],
-        win_lengths: List[int] = [600, 1200, 240],
+        fft_sizes: List[int],
+        hop_sizes:List[int],
+        win_lengths:List[int],
+        n_bins:List[int],
         window: str = "hann_window",
-        w_sc: float = 1.0,
+        w_sc: float = 0.0,
         w_log_mag: float = 1.0,
         w_lin_mag: float = 0.0,
         w_phs: float = 0.0,
-        sample_rate: float = None,
-        scale: str = None,
-        n_bins: int = None,
+        sample_rate: float = 44100,
+        scale: str = 'mel',
         perceptual_weighting: bool = False,
         scale_invariance: bool = False,
         **kwargs,
@@ -88,7 +90,7 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
         self.win_lengths = win_lengths
 
         self.stft_losses = torch.nn.ModuleList()
-        for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths):
+        for fs, ss, wl, nb in zip(fft_sizes, hop_sizes, win_lengths,n_bins):
             self.stft_losses += [
                 STFTLoss(
                     fs,
@@ -101,7 +103,7 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
                     w_phs,
                     sample_rate,
                     scale,
-                    n_bins,
+                    nb,
                     perceptual_weighting,
                     scale_invariance,
                     **kwargs,
@@ -146,6 +148,7 @@ class CustomSumAndDifferenceSTFTLoss(torch.nn.Module):
         fft_sizes: List[int],
         hop_sizes: List[int],
         win_lengths: List[int],
+        n_bins: List[int],
         window: str = "hann_window",
         w_sum: float = 1.0,
         w_diff: float = 1.0,
@@ -158,10 +161,11 @@ class CustomSumAndDifferenceSTFTLoss(torch.nn.Module):
         self.w_diff = w_diff
         self.output = output
         self.mrstft = CustomMultiResolutionSTFTLoss(
-            fft_sizes,
-            hop_sizes,
-            win_lengths,
-            window,
+            fft_sizes= fft_sizes,
+            hop_sizes = hop_sizes,
+            win_lengths = win_lengths,
+            n_bins=n_bins,
+            window=window,
             **kwargs,
         )
 
