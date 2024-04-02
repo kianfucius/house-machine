@@ -107,7 +107,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
         optimizer = AdamW(self.parameters(), lr=LEARNING_RATE)
         if not self.lr_scheduler:
             self.lr_scheduler = lr_scheduler.ReduceLROnPlateau(
-                optimizer, patience=3, cooldown=1, factor=0.5, mode="min"
+                optimizer, patience=50, cooldown=10, factor=0.5, mode="min"
             )
         lr_training_config = {
             # REQUIRED: The scheduler instance
@@ -119,9 +119,8 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             # How many epochs/steps should pass between calls to
             # `scheduler.step()`. 1 corresponds to updating the learning
             # rate after every epoch/step.
-            "frequency": 1,  # <- I do this to make sure the validation loss and training is aligned.
-            # Metric to to monitor for schedulers.
-            "monitor": "val_loss",
+            "frequency": 1,  # Update the learning rate after every step.
+            "monitor": "train_loss", # Monitoring the training loss.
         }
         return {"optimizer": optimizer, "lr_scheduler": lr_training_config}
 
