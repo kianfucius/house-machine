@@ -1,6 +1,7 @@
 """
 This is the main file to run Spotify recommendation generation.
 """
+
 import argparse
 import logging
 import os
@@ -8,11 +9,10 @@ from typing import List
 
 import pandas as pd
 import spotdl
-from spotdl.types.options import DownloaderOptionalOptions
-from spotdl.types.song import Song
-
 from scripts.hm_spot_dl import HmSpotDl
 from scripts.utils import prep_env
+from spotdl.types.options import DownloaderOptionalOptions
+from spotdl.types.song import Song
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

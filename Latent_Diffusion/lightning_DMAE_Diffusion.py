@@ -1,33 +1,27 @@
-import torch
-from torch import nn
-from torch import randint
-from torch.optim import AdamW, lr_scheduler
-import torch.nn.functional as F
-
-from typing import List
-
 import os
-from constants import LEARNING_RATE, VAL_DIR
 
 import lightning as L
+import torch
 import torchaudio
-from audio_diffusion_pytorch import VDiffusion
 from archisound import ArchiSound
+from audio_diffusion_pytorch import VDiffusion
+from constants import LEARNING_RATE, VAL_DIR
 from Custom_Losses import CustomFrequencyLoss
+from torch import nn, randint
+from torch.optim import AdamW, lr_scheduler
+
 
 class CustomDiffusionModel(VDiffusion):
-    def __init__(self, base_diffusion:VDiffusion, custom_loss:nn.Module):
+    def __init__(self, base_diffusion: VDiffusion, custom_loss: nn.Module):
         super().__init__(base_diffusion.net, base_diffusion.sigma_distribution)
         self.custom_loss = custom_loss
-        self.tuple_loss =False
+        self.tuple_loss = False
 
     def extend_dim(self, x: torch.Tensor, dim: int):
         # e.g. if dim = 4: shape [b] => [b, 1, 1, 1],
         return x.view(*x.shape + (1,) * (dim - x.ndim))
-    
-    
-    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor: 
 
+    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
         batch_size, device = x.shape[0], x.device
         # Sample amount of noise to add for each batch element
         sigmas = self.sigma_distribution(num_samples=batch_size, device=device)
@@ -42,28 +36,31 @@ class CustomDiffusionModel(VDiffusion):
         v_pred = self.net(x_noisy, sigmas, **kwargs)
 
         # Computing x_pred:
-        x_pred = alphas*x_noisy - sigmas_batch*v_pred
-        return self.custom_loss(v_pred, 
-                v_target, 
-                x_pred,
-                x,
-                alphas,
-                sigmas_batch,
-                tuple_loss = self.tuple_loss)
-    
+        x_pred = alphas * x_noisy - sigmas_batch * v_pred
+        return self.custom_loss(
+            v_pred,
+            v_target,
+            x_pred,
+            x,
+            alphas,
+            sigmas_batch,
+            tuple_loss=self.tuple_loss,
+        )
+
+
 class LitDiffusionAudioEncoder(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""
 
     def __init__(
         self,
-        model_path = None,
+        model_path=None,
         val_sample_dir=VAL_DIR,
         num_saved_samples_per_val_step=3,
         num_validation_sample_steps=50,
         learning_rate_scheduler=None,
-        loss_fn = 'custom',
-        quantize_model = True,
-        frequency_weight = 0.001
+        loss_fn="custom",
+        quantize_model=True,
+        frequency_weight=0.001,
     ):
         """
         if loss_fn == mean: keep v-objective diffusion loss.
@@ -87,16 +84,17 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             )
         else:
             self.model = torch.load(model_path)
-        
-        if loss_fn =='custom':
+
+        if loss_fn == "custom":
             # Changing forward pass of diffusion model to incorporate custom loss function.
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            custom_loss = CustomFrequencyLoss(frequency_weight= frequency_weight)
-            self.model.model.diffusion = CustomDiffusionModel(self.model.model.diffusion, custom_loss).to(device)
-        
+            custom_loss = CustomFrequencyLoss(frequency_weight=frequency_weight)
+            self.model.model.diffusion = CustomDiffusionModel(
+                self.model.model.diffusion, custom_loss
+            ).to(device)
+
         if quantize_model:
             self.model = torch.quantization.quantize_dynamic(self.model)
-
 
     def training_step(self, batch, batch_idx):
         loss = self.model(batch)
@@ -120,26 +118,37 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             # `scheduler.step()`. 1 corresponds to updating the learning
             # rate after every epoch/step.
             "frequency": 1,  # Update the learning rate after every step.
-            "monitor": "train_loss", # Monitoring the training loss.
+            "monitor": "train_loss",  # Monitoring the training loss.
         }
         return {"optimizer": optimizer, "lr_scheduler": lr_training_config}
 
     def validation_step(self, val_batch, batch_idx):
         with torch.no_grad():
-                # -------------------------------------------------------------
-                print('Computing Batched generation')
-                model_output = self.model.encode(val_batch)
-                #with torch.autocast(device_type="cuda"):
-                #model_output = model_output.to(dtype = torch.float)
-                model_output = self.model.decode(model_output, num_steps=self.val_sample_steps,)
-                # -------------------------------------------------------------
-                print('Computing Validation Loss')
-                # Enabling Tuple loss to examine both frequency and MSE loss.
-                self.model.model.diffusion.tuple_loss = True
-                diffusion_loss, frequency_loss = self.model(val_batch)
+            # -------------------------------------------------------------
+            print("Computing Batched generation")
+            model_output = self.model.encode(val_batch)
+            # with torch.autocast(device_type="cuda"):
+            # model_output = model_output.to(dtype = torch.float)
+            model_output = self.model.decode(
+                model_output,
+                num_steps=self.val_sample_steps,
+            )
+            # -------------------------------------------------------------
+            print("Computing Validation Loss")
+            # Enabling Tuple loss to examine both frequency and MSE loss.
+            self.model.model.diffusion.tuple_loss = True
+            diffusion_loss, frequency_loss = self.model(val_batch)
         # ---------------------------------------------------------------------
-        self.log("val_loss", diffusion_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("validation frequency loss", frequency_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "val_loss", diffusion_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.log(
+            "validation frequency loss",
+            frequency_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
 
         # Generating and saving audio samples.
         random_index = randint(0, val_batch.shape[0], (self.num_val_samples,))

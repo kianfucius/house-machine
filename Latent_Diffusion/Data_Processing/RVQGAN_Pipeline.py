@@ -1,6 +1,6 @@
 import dac
-from audiotools import AudioSignal
 import torch
+from audiotools import AudioSignal
 
 
 class RVQGANEncoder:

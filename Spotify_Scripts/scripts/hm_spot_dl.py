@@ -2,12 +2,12 @@
 House-Machine's version of the Spotdl class, which simplifies
 the process of downloading songs from Spotify.
 """
+
 import asyncio
 from typing import Optional, Union
 
 from scripts.hm_downloader import HMDownloader
 from spotdl import Spotdl
-from spotdl._version import __version__
 from spotdl.types.options import DownloaderOptionalOptions, DownloaderOptions
 from spotdl.utils.spotify import SpotifyClient
 

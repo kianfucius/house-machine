@@ -1,15 +1,12 @@
 import os
 
 import lightning as L
-import torch.nn.functional as F
-from torch import nn
+import torch
 import torchaudio
 from audio_diffusion_pytorch import DiffusionModel, UNetV0, VDiffusion, VSampler
-from torch import randint
-import torch
+from constants import LEARNING_RATE, VAL_DIR
 from torch.optim import AdamW, lr_scheduler
 
-from constants import LEARNING_RATE, TRAINING_CONFIG, VAL_DIR
 
 class StableDiffusion(L.LightningModule):
     """Torch Lightning Module for Audio Encoder-Decoder Model."""

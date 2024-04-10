@@ -9,6 +9,7 @@ numpy==1.24.1
 pandas==2.2.1
 python-dotenv==1.0.1
 pytorch-lightning==2.2.1
+ruff==0.3.5
 torch==2.2.0+cu118
 torchaudio==2.2.0+cu118
 tqdm==4.66.2

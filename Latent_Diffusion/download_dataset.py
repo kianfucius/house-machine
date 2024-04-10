@@ -1,83 +1,86 @@
-"""
-Downloads n songs from a given S3 bucket to a given local directory.
-"""
-
 import argparse
 import os
-from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 import boto3
+import pandas as pd
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 load_dotenv()
 
+SONG_EXTENSION = ".wav"
 
-def download_file(bucket, file, directory):
+
+def download_file(
+    song_list: List[str],
+    index: int,
+    # track_id: str,
+    dest: str | os.PathLike,
+    s3_client: boto3.client,
+    bucket_name: str,
+):
     """
-    Downloads a single file from an S3 bucket to a given local directory.
-
-    Parameters
-    ----------
-    bucket : s3.Bucket
-        S3 bucket object.
-    file : dict
-        Dictionary containing metadata about the file to download.
-    directory : str
-        Path to local directory where file will be downloaded
+    Downloads a song by its track_id if it is not already downloaded.
+    Logs failures without halting the program.
     """
-    # Get the file name
-    file_name = file["Key"].split("/")[-1]
-    # Download the file
-    bucket.download_file(file["Key"], os.path.join(directory, file_name))
-    print(f"Downloaded {file_name}")
+    track_id = song_list[index]
+    dest_path = os.path.join(dest, f"{track_id}{SONG_EXTENSION}")
+    if os.path.exists(dest_path):
+        print(f"{index} Found local: {dest_path}")
+        return
+
+    try:
+        s3_client.download_file(bucket_name, f"{track_id}{SONG_EXTENSION}", dest_path)
+        print(f"{index} Downloaded {track_id}")
+    except Exception as e:
+        print(f"{index} Failed to download {track_id}: {e}")
 
 
-def main(num_songs: int, directory: str):
+def main(
+    song_list_file: str | os.PathLike,
+    num_songs: int,
+    bucket_name: str,
+    dest: str | os.PathLike,
+):
     """
     Downloads n songs from a given S3 bucket to a given local directory.
-
-    Parameters
-    ----------
-    num_songs : int
-        Number of songs to download.
-    directory : str
-        Path to local directory where files will be downloaded
     """
-    # If directory does not exist, create it
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    if not os.path.exists(dest):
+        os.makedirs(dest)
 
-    # set up s3 client
-    aws_id = os.getenv("AWS_ID")
-    aws_key = os.getenv("AWS_KEY")
-    bucket_name = os.getenv("SOURCE_BUCKET")
-    # Create an S3 resource object using the temporary credentials
-    s3_client = boto3.resource(
+    # Read song list
+    song_info = pd.read_csv(song_list_file, nrows=num_songs)
+    song_list: List[str] = song_info["track_id"].tolist()
+
+    start_idx = 13058
+    song_list = song_list[start_idx:]
+    num_songs = num_songs - start_idx
+
+    aws_access_key_id = os.getenv("AWS_ID")
+    aws_secret_access_key = os.getenv("AWS_KEY")
+    s3_client = boto3.client(
         "s3",
-        aws_access_key_id=aws_id,
-        aws_secret_access_key=aws_key,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
     )
 
-    # List objects in the bucket. There are over 1k files, so we need to paginate
-    # through the results.
-    bucket = s3_client.Bucket(bucket_name)
-    paginator = s3_client.meta.client.get_paginator("list_objects_v2")
-    pages = paginator.paginate(Bucket=bucket_name)
-    files_to_download = []
-    for page in pages:
-        files_to_download.extend(page["Contents"])
-
-    # Download the files
-    with ThreadPoolExecutor() as executor:
-        for i in range(num_songs):
-            executor.submit(download_file, bucket, files_to_download[i], directory)
+    for song_index in tqdm(range(num_songs)):
+        download_file(song_list, song_index, dest, s3_client, bucket_name)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Download n songs from a given S3 bucket to a given local directory."
     )
-    parser.add_argument("n", type=int, help="number of songs to download")
-    parser.add_argument("local_dir", type=str, help="path to local directory")
+    parser.add_argument(
+        "song_list_file", type=str, help="Path to the CSV file of song IDs."
+    )
+    parser.add_argument("num_songs", type=int, help="Number of songs to download.")
+    parser.add_argument("bucket_name", type=str, help="Name of the S3 bucket.")
+    parser.add_argument(
+        "dest", type=str, help="Destination directory for downloaded songs."
+    )
     args = parser.parse_args()
-    main(args.n, args.local_dir)
+
+    main(**vars(args))

@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 from pydub import AudioSegment
-from spotdl._version import __version__
 from spotdl.download.downloader import (
     SPONSOR_BLOCK_CATEGORIES,
     Downloader,

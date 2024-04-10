@@ -1,45 +1,53 @@
-from auraloss.freq import STFTLoss, SumAndDifference
+from typing import List
+
 import torch
 import torch.nn.functional as F
+from auraloss.freq import STFTLoss, SumAndDifference
 from torch import nn
-from typing import List
+
 
 class CustomFrequencyLoss(nn.Module):
     """
     Class for custom pytorch loss with Custom frequency loss penalty term.
     """
 
-    def __init__(self, frequency_weight = 0.001,        
-                fft_sizes: List[int] = [64, 128, 256,512,1024],
-                hop_sizes:List[int]=[8, 16, 32, 64, 128],
-                win_lengths:List[int]=[32, 64, 128, 256, 512],
-                n_bins:List[int] =[5, 10, 20, 40, 80, 160],
-                            *args, **kwargs) -> None:
+    def __init__(
+        self,
+        frequency_weight=0.001,
+        fft_sizes: List[int] = [64, 128, 256, 512, 1024],
+        hop_sizes: List[int] = [8, 16, 32, 64, 128],
+        win_lengths: List[int] = [32, 64, 128, 256, 512],
+        n_bins: List[int] = [5, 10, 20, 40, 80, 160],
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
-        self.frequency_loss = CustomSumAndDifferenceSTFTLoss(fft_sizes=fft_sizes,
-                                                       hop_sizes = hop_sizes,
-                                                       win_lengths=win_lengths,
-                                                       n_bins = n_bins,
-                                                       reduction = 'none')
-        self.weighting =frequency_weight
-        
+        self.frequency_loss = CustomSumAndDifferenceSTFTLoss(
+            fft_sizes=fft_sizes,
+            hop_sizes=hop_sizes,
+            win_lengths=win_lengths,
+            n_bins=n_bins,
+            reduction="none",
+        )
+        self.weighting = frequency_weight
 
-    def forward(self, 
-                v_pred:torch.Tensor, 
-                v_true:torch.Tensor, 
-                x_pred:torch.Tensor, 
-                x_true:torch.Tensor,
-                alphas:torch.Tensor,
-                sigmas:torch.Tensor,
-                tuple_loss= False):
-        assert sigmas.shape == alphas.shape, 'Sigmas and Alphas have different shape'
-        mean_loss = F.mse_loss(v_pred,v_true) 
-        frequency_loss = self.frequency_loss(x_true, x_pred,alphas, sigmas)
+    def forward(
+        self,
+        v_pred: torch.Tensor,
+        v_true: torch.Tensor,
+        x_pred: torch.Tensor,
+        x_true: torch.Tensor,
+        alphas: torch.Tensor,
+        sigmas: torch.Tensor,
+        tuple_loss=False,
+    ):
+        assert sigmas.shape == alphas.shape, "Sigmas and Alphas have different shape"
+        mean_loss = F.mse_loss(v_pred, v_true)
+        frequency_loss = self.frequency_loss(x_true, x_pred, alphas, sigmas)
         if tuple_loss:
-            return mean_loss,frequency_loss
+            return mean_loss, frequency_loss
         else:
-            return mean_loss + frequency_loss*self.weighting
-    
+            return mean_loss + frequency_loss * self.weighting
 
 
 class CustomMultiResolutionSTFTLoss(torch.nn.Module):
@@ -69,16 +77,16 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
     def __init__(
         self,
         fft_sizes: List[int],
-        hop_sizes:List[int],
-        win_lengths:List[int],
-        n_bins:List[int],
+        hop_sizes: List[int],
+        win_lengths: List[int],
+        n_bins: List[int],
         window: str = "hann_window",
         w_sc: float = 0.0,
         w_log_mag: float = 1.0,
         w_lin_mag: float = 0.0,
         w_phs: float = 0.0,
         sample_rate: float = 44100,
-        scale: str = 'mel',
+        scale: str = "mel",
         perceptual_weighting: bool = False,
         scale_invariance: bool = False,
         **kwargs,
@@ -90,7 +98,7 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
         self.win_lengths = win_lengths
 
         self.stft_losses = torch.nn.ModuleList()
-        for fs, ss, wl, nb in zip(fft_sizes, hop_sizes, win_lengths,n_bins):
+        for fs, ss, wl, nb in zip(fft_sizes, hop_sizes, win_lengths, n_bins):
             self.stft_losses += [
                 STFTLoss(
                     fs,
@@ -114,12 +122,12 @@ class CustomMultiResolutionSTFTLoss(torch.nn.Module):
         mrstft_loss = 0.0
 
         for f in self.stft_losses:
-            mrstft_loss += torch.mean(f(x, y)*(1+ (alphas/sigmas)**2))
+            mrstft_loss += torch.mean(f(x, y) * (1 + (alphas / sigmas) ** 2))
 
         mrstft_loss /= len(self.stft_losses)
 
         return mrstft_loss
-        
+
 
 class CustomSumAndDifferenceSTFTLoss(torch.nn.Module):
     """Sum and difference sttereo STFT loss module.
@@ -161,19 +169,21 @@ class CustomSumAndDifferenceSTFTLoss(torch.nn.Module):
         self.w_diff = w_diff
         self.output = output
         self.mrstft = CustomMultiResolutionSTFTLoss(
-            fft_sizes= fft_sizes,
-            hop_sizes = hop_sizes,
-            win_lengths = win_lengths,
+            fft_sizes=fft_sizes,
+            hop_sizes=hop_sizes,
+            win_lengths=win_lengths,
             n_bins=n_bins,
             window=window,
             **kwargs,
         )
 
-    def forward(self, input: torch.Tensor, 
-                target: torch.Tensor,
-                alphas:torch.Tensor, 
-                sigmas:torch.Tensor):
-        
+    def forward(
+        self,
+        input: torch.Tensor,
+        target: torch.Tensor,
+        alphas: torch.Tensor,
+        sigmas: torch.Tensor,
+    ):
         """This loss function assumes batched input of stereo audio in the time domain.
 
         Args:

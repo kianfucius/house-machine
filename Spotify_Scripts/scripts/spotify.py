@@ -1,15 +1,15 @@
 """
 Spotify class, authenticates and holds client. All our spotify helpers live here.
 """
+
 import logging
 import os
 from typing import List
 
 import pandas as pd
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-
 from scripts.utils import ceildiv
+from spotipy.oauth2 import SpotifyOAuth
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

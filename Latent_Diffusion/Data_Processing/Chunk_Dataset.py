@@ -28,4 +28,3 @@ class AudioChunkDataSet(Dataset):
         audio_sample_path = self._get_audio_sample_path(index)
         signal = torch.load(audio_sample_path)
         return signal, self.meta_data.iloc[index]["prompt"]
-

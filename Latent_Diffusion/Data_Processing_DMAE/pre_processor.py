@@ -4,10 +4,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torchaudio
-from audiotools import AudioSignal
 from torch.nn import ConstantPad1d
 from tqdm import tqdm
-from multiprocessing import Pool
 
 from .Chunk_Dataset import AudioChunkDataSet
 
@@ -20,15 +18,15 @@ class PreProcessor:
     def __init__(
         self,
         meta_data_callback: callable = None,
-        input_audio_dir="Latent_Diffusion/data",
-        chunked_dir="Latent_Diffusion/chunked_data",
-        desired_sample_rate=44100,
-        input_len=2**18,
-        checkpoint_size=50,
+        input_audio_dir: str = "/mnt/d/hm/data",
+        chunked_dir: str = "/mnt/d/hm/chunked",
+        desired_sample_rate: int = 44100,
+        input_len: int = 2**18,
+        checkpoint_size: int = 50,
+        delete_source: bool = False,
     ) -> None:
-        self.meta_data_callback = meta_data_callback
-
-        self.meta_data = None
+        self.meta_data_callback: callable = meta_data_callback
+        self.meta_data: pd.DataFrame = None
         self.input_dir = input_audio_dir
         self.checkpoint_size = checkpoint_size
         self.chunked_dir = chunked_dir
@@ -36,10 +34,21 @@ class PreProcessor:
         self.input_tensor_len = input_len
         self.metadata_file_path = os.path.join(self.chunked_dir, "metadata.csv")
         self.output_dir = os.path.join(self.chunked_dir, "waveforms")
-        self.training_meta_dir = os.path.join(self.chunked_dir, "train_metadata.csv")
-        self.val_meta_dir = os.path.join(self.chunked_dir, "val_metadata.csv")
+        self.training_metadata_dest = os.path.join(
+            self.chunked_dir, "train_metadata.csv"
+        )
+        self.val_metadata_dest = os.path.join(self.chunked_dir, "val_metadata.csv")
+        self.delete_source = delete_source
+        # Create any directories that will be needed later
+        dirs_to_create = [
+            self.input_dir,
+            self.output_dir,
+            self.chunked_dir,
+        ]
+        for dir_path in dirs_to_create:
+            os.makedirs(dir_path, exist_ok=True)
 
-    def chunk_single_song(self, audio_file):
+    def chunk_single_song(self, audio_file: str):
         """
         Chunking Procedure for a single audio file.
 
@@ -47,15 +56,14 @@ class PreProcessor:
 
         Be mindful of this when encoding.
         """
-        splitted = self.split_audio(os.path.join(self.input_dir, audio_file))
+        song_path = os.path.join(self.input_dir, audio_file)
+        splitted = self.split_audio(song_path)
 
         song_name = audio_file.removesuffix(
             ".wav"
         )  # Considering Song name as file name without file extension.
         # Creating a specific directory for song name.
-        parent_dir = os.path.join(self.output_dir, song_name)
-        if not os.path.exists(parent_dir):
-            os.makedirs(parent_dir)
+        os.makedirs(os.path.join(self.output_dir, song_name), exist_ok=True)
 
         # Adding Metadata
         temp_df = pd.DataFrame(
@@ -81,18 +89,13 @@ class PreProcessor:
             )
             torchaudio.save(
                 music_path,
-                src = splitted[i, :, :].squeeze(),
-                format = 'wav',
-                sample_rate = self.sample_rate)
-                
+                src=splitted[i, :, :].squeeze(),
+                format="wav",
+                sample_rate=self.sample_rate,
+            )
 
-        # Removing from initial directoy:
-        remove_path = os.path.join(self.input_dir, song_name) + '.wav'
-        if os.path.isfile(remove_path):
-            os.remove(remove_path)
-        else:
-            # If it fails, inform the user.
-            print("Error: %s file not found" % song_name)
+        if self.delete_source:
+            os.remove(song_path)
 
         return temp_df
 
@@ -105,34 +108,34 @@ class PreProcessor:
             raise EnvironmentError(
                 f"Please download the dataset and place in {self.input_dir} folder"
             )
-        
-        audio_files_list = os.listdir(self.input_dir)
+
+        audio_files = os.listdir(self.input_dir)
+        # Ensure all files are *.wav
+        # If a song's download was interrupted, it may have a file name like song.wav.axszd
+        broken_file_list = [file for file in audio_files if not file.endswith(".wav")]
+        if len(broken_file_list):
+            raise EnvironmentError(
+                "The following songs were incorrectly downloaded: ", broken_file_list
+            )
+
         output_df = pd.DataFrame()
 
-        audio_files_list = audio_files_list
-        
-        # with Pool(4) as pool:
-        #     for index, result_df in enumerate(
-        #         tqdm(
-        #             pool.imap_unordered(self.chunk_single_song, audio_files_list),
-        #             total=len(audio_files_list),
-        #         )
-        #     ):
-        #         output_df = pd.concat([output_df, result_df])
-
-        for audio_file in tqdm(audio_files_list):
+        for audio_file in tqdm(audio_files):
             try:
                 temp_df = self.chunk_single_song(audio_file)
             except Exception as e:
-                print('Caught exception:' + str(e))
+                print("Caught exception:" + str(e))
                 continue
-            
+
             output_df = pd.concat([output_df, temp_df])
 
         self.meta_data = output_df
-        print('--- Saving Meta Data DataFrame ---')
+        print("--- Saving Meta Data DataFrame ---")
         output_df.to_csv(self.metadata_file_path, index=False)
-        print('Number of successfully chunked songs --' + str(len(os.listdir(self.output_dir)) -1 ))
+        print(
+            "Number of successfully chunked songs --"
+            + str(len(os.listdir(self.output_dir)) - 1)
+        )
 
     def split_audio(self, audio_file_path, pad_element=0):
         """
@@ -193,17 +196,17 @@ class PreProcessor:
             _get_audio_sample_path_from_meta_data,
             prompt_constructor=None,
         )
-    
+
     def construct_meta_data_file(self):
         """
-        Based on the output directory provided in the constructor, 
+        Based on the output directory provided in the constructor,
         creates a new metadata.csv, updates the class variable and returns the file.
         """
         return_df = pd.DataFrame()
-        
+
         filenames = os.listdir(self.output_dir)
-        for file in tqdm(filenames,desc='Constructing MetaData Dataframe'):
-            num_chunks = len(os.listdir(os.path.join(self.output_dir,file)))    
+        for file in tqdm(filenames, desc="Constructing MetaData Dataframe"):
+            num_chunks = len(os.listdir(os.path.join(self.output_dir, file)))
             # Adding Metadata
             temp_df = pd.DataFrame(
                 [
@@ -218,14 +221,14 @@ class PreProcessor:
             return_df = pd.concat([return_df, temp_df])
         self.meta_data = return_df
         self.meta_data.to_csv(self.metadata_file_path)
-            
-    def construct_train_split_data_files(self, train_prop = 0.95):
+
+    def construct_train_split_data_files(self, train_prop=0.95):
         """
         Construct meta data file then randomly splits metadata into
         train and test Audio Chunk dataset classes.
         """
         self.construct_meta_data_file()
-        return self.split_into_train_val(train_prop= train_prop)
+        return self.split_into_train_val(train_prop=train_prop)
 
     def split_into_train_val(self, train_prop=0.95):
         """
@@ -254,8 +257,8 @@ class PreProcessor:
         train_meta_data = pd.merge(self.meta_data, train_songs, on="Song_Name")
         val_meta_data = pd.merge(self.meta_data, val_songs, on="Song_Name")
 
-        train_meta_data.to_csv(self.training_meta_dir)
-        val_meta_data.to_csv(self.val_meta_dir)
+        train_meta_data.to_csv(self.training_metadata_dest)
+        val_meta_data.to_csv(self.val_metadata_dest)
 
         return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)
 
@@ -264,6 +267,6 @@ class PreProcessor:
         Getting train-test split if it already exists in the data folder.
         Otherwise throw exception saying to call the split_into_train_val set.
         """
-        train_meta_data = pd.read_csv(self.training_meta_dir)
-        val_meta_data = pd.read_csv(self.val_meta_dir)
+        train_meta_data = pd.read_csv(self.training_metadata_dest)
+        val_meta_data = pd.read_csv(self.val_metadata_dest)
         return self.return_dataset(train_meta_data), self.return_dataset(val_meta_data)

@@ -1,15 +1,10 @@
 """Run this file to train the model"""
+
 import datetime
 import os
 
 import lightning as L
 import wandb
-from archisound import ArchiSound
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
-from torch.utils.data import DataLoader
-from torch import set_float32_matmul_precision
-
 from constants import (
     BATCH_SIZE,
     LEARNING_RATE,
@@ -18,7 +13,11 @@ from constants import (
     WANDB_ENCODER_DECODER_PROJECT_NAME,
 )
 from Data_Processing_DMAE import pre_processor
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning_DMAE_Diffusion import LitDiffusionAudioEncoder
+from pytorch_lightning.loggers import WandbLogger
+from torch import set_float32_matmul_precision
+from torch.utils.data import DataLoader
 
 
 def check_num_workers(test_dataloader):
@@ -42,13 +41,17 @@ def execute_training_pipeline(
     Function for executing entire training pipeline
     """
     # Lowering precision to reduce memory requirements:
-    set_float32_matmul_precision('high')
+    set_float32_matmul_precision("high")
 
     # Pipeline
     preprocessor = pre_processor.PreProcessor()
+    # preprocessor.preprocess()
 
-    train_set, val_set = preprocessor.construct_train_split_data_files(train_prop=train_split_prop)
-    #train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
+    train_set, val_set = preprocessor.construct_train_split_data_files(
+        train_prop=train_split_prop
+    )
+    train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
+
     train_dataloader = DataLoader(
         train_set,
         batch_size=BATCH_SIZE,
@@ -63,8 +66,10 @@ def execute_training_pipeline(
         num_workers=3,
         persistent_workers=True,
     )
-    
-    lightning_model = LitDiffusionAudioEncoder(loss_fn='custom', frequency_weight= 0.0005)
+
+    lightning_model = LitDiffusionAudioEncoder(
+        loss_fn="custom", frequency_weight=0.0005
+    )
 
     config_dict = TRAINING_CONFIG.copy()
     config_dict["Learning_Rate"] = LEARNING_RATE

@@ -1,5 +1,6 @@
 import os
 
+import constants
 import numpy as np
 import pandas as pd
 import torch
@@ -7,8 +8,6 @@ import torchaudio
 from audiotools import AudioSignal
 from torch.nn import ConstantPad1d
 from tqdm import tqdm
-
-import constants
 
 from .Chunk_Dataset import AudioChunkDataSet
 from .RVQGAN_Pipeline import RVQGANEncoder

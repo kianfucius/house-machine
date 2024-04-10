@@ -26,6 +26,14 @@ class AudioChunkDataSet(Dataset):
 
     def __getitem__(self, index):
         audio_sample_path = self._get_audio_sample_path(index)
-        signal,sample_rate = torchaudio.load(audio_sample_path)
+        signal, sample_rate = torchaudio.load(audio_sample_path)
+        # A bunch of validation checks, but this realistically shouldn't throw any errors
+        if sample_rate != 44100:
+            raise ValueError(f"Sample rate is not 44100: {audio_sample_path}")
+        if signal.shape[0] != 2:
+            raise ValueError(f"Signal is not stereo: {audio_sample_path}")
+        if signal.shape[1] < 262144:
+            raise ValueError(
+                f"Signal {audio_sample_path} was not padded correctly: {signal.shape[1]}"
+            )
         return signal
-
