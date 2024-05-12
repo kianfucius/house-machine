@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 if __name__ == "__main__":
     BATCH_SIZE = 128
     train_split_prop = 0.999
-    preprocessor = PreProcessor()
+    preprocessor = PreProcessor(input_audio_dir="/home/christian/house-machine/Latent_Diffusion/Data/hm-tracks", chunked_dir= "/home/christian/house-machine/Latent_Diffusion/chunked_tracks")
+    preprocessor.preprocess()
 
     train_set, val_set = preprocessor.construct_train_split_data_files(
         train_prop=train_split_prop

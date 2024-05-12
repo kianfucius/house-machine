@@ -44,13 +44,13 @@ def execute_training_pipeline(
     set_float32_matmul_precision("high")
 
     # Pipeline
-    preprocessor = pre_processor.PreProcessor()
-    # preprocessor.preprocess()
+    preprocessor = pre_processor.PreProcessor(input_audio_dir="/home/christian/house-machine/Latent_Diffusion/Data/hm-tracks", chunked_dir= "/home/christian/house-machine/Latent_Diffusion/chunked_tracks")
+    #preprocessor.preprocess()
 
     train_set, val_set = preprocessor.construct_train_split_data_files(
         train_prop=train_split_prop
     )
-    train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
+    #train_set, val_set = preprocessor.split_into_train_val(train_prop=train_split_prop)
 
     train_dataloader = DataLoader(
         train_set,
@@ -68,7 +68,7 @@ def execute_training_pipeline(
     )
 
     lightning_model = LitDiffusionAudioEncoder(
-        loss_fn="custom", frequency_weight=0.0005
+        loss_fn="custom", frequency_weight=0.001
     )
 
     config_dict = TRAINING_CONFIG.copy()
@@ -78,10 +78,11 @@ def execute_training_pipeline(
     wandblogger = WandbLogger(
         # set the wandb project where this run will be logged
         project=WANDB_ENCODER_DECODER_PROJECT_NAME,
-        name=f"{WANDB_ENCODER_DECODER_PROJECT_NAME}-run-test",
+        name=f"{WANDB_ENCODER_DECODER_PROJECT_NAME}-run-16_grad_accumulation_grad_clipping",
         # track hyperparameters and run metadata
         config=config_dict,
     )
+    wandblogger.watch(lightning_model)
     config_dict["num_val_sample_steps"] = lightning_model.val_sample_steps
 
     if not os.path.exists(MODEL_DIRECTORY):
@@ -94,13 +95,13 @@ def execute_training_pipeline(
         monitor="val_loss",
     )
 
-    early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=0.01, patience=8, verbose=False, mode="min"
-    )
+    # early_stop_callback = EarlyStopping(
+    #     monitor="val_loss", min_delta=0.001, patience=8, verbose=False, mode="min"
+    # )
 
     trainer = L.Trainer(
         **TRAINING_CONFIG,
-        callbacks=[check_point_callback, early_stop_callback],
+        callbacks=[check_point_callback],
         logger=wandblogger,
     )
     trainer.fit(

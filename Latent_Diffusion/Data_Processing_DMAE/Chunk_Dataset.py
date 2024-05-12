@@ -2,7 +2,6 @@ import pandas as pd
 import torchaudio
 from torch.utils.data import Dataset
 
-
 class AudioChunkDataSet(Dataset):
     """
     Torch Dataset Class which will be used to load the chunked audio into the encoder-decoder model.
@@ -30,8 +29,14 @@ class AudioChunkDataSet(Dataset):
         # A bunch of validation checks, but this realistically shouldn't throw any errors
         if sample_rate != 44100:
             raise ValueError(f"Sample rate is not 44100: {audio_sample_path}")
-        if signal.shape[0] != 2:
-            raise ValueError(f"Signal is not stereo: {audio_sample_path}")
+        if signal.shape[0] <2:
+            # Duplicating signal to make it stereo.
+            print(audio_sample_path)
+            signal = signal.repeat(2, 1)
+        elif signal.shape[0]>2:
+            # Take first row and dupliate to make it stereo
+            signal= signal[0,:].unsqueeze(0).repeat(2,1)
+            print(audio_sample_path)
         if signal.shape[1] < 262144:
             raise ValueError(
                 f"Signal {audio_sample_path} was not padded correctly: {signal.shape[1]}"

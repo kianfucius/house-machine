@@ -17,9 +17,9 @@ class PreProcessor:
 
     def __init__(
         self,
+        input_audio_dir: str, 
+        chunked_dir: str,
         meta_data_callback: callable = None,
-        input_audio_dir: str = "/mnt/d/hm/data",
-        chunked_dir: str = "/mnt/d/hm/chunked",
         desired_sample_rate: int = 44100,
         input_len: int = 2**18,
         checkpoint_size: int = 50,
@@ -114,8 +114,10 @@ class PreProcessor:
         # If a song's download was interrupted, it may have a file name like song.wav.axszd
         broken_file_list = [file for file in audio_files if not file.endswith(".wav")]
         if len(broken_file_list):
+            for file in broken_file_list:
+                os.remove(os.path.join(self.input_dir, file))
             raise EnvironmentError(
-                "The following songs were incorrectly downloaded: ", broken_file_list
+                "Deleting The following songs that were incorrectly downloaded and exiting: ", broken_file_list
             )
 
         output_df = pd.DataFrame()

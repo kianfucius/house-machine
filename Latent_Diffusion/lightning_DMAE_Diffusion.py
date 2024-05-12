@@ -98,14 +98,20 @@ class LitDiffusionAudioEncoder(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self.model(batch)
-        self.log("train_loss", loss.item(), prog_bar=True, on_step=True, on_epoch=False)
+        if batch_idx>1:
+            try:
+                self.log('learning_rate', self.lr_scheduler.get_last_lr()[-1])
+            except AttributeError:
+                self.log('learning_rate', LEARNING_RATE) # when last_lr isn't defined in lr_scheduler log the initial lr
+                
+        self.log("train_loss", loss.item(), prog_bar=True, on_step=True, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), lr=LEARNING_RATE)
         if not self.lr_scheduler:
             self.lr_scheduler = lr_scheduler.ReduceLROnPlateau(
-                optimizer, patience=50, cooldown=10, factor=0.5, mode="min"
+                optimizer, patience=1, cooldown=1, factor=0.5, mode="min"
             )
         lr_training_config = {
             # REQUIRED: The scheduler instance
@@ -113,7 +119,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
             # The unit of the scheduler's step size, could also be 'step'.
             # 'epoch' updates the scheduler on epoch end whereas 'step'
             # updates it after a optimizer update.
-            "interval": "step",
+            "interval": "epoch",
             # How many epochs/steps should pass between calls to
             # `scheduler.step()`. 1 corresponds to updating the learning
             # rate after every epoch/step.
@@ -145,7 +151,7 @@ class LitDiffusionAudioEncoder(L.LightningModule):
         self.log(
             "validation frequency loss",
             frequency_loss,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             prog_bar=True,
         )
